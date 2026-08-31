@@ -7,11 +7,13 @@ export type ProductRecord = {
   id: string;
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   categoryId: string;
   supplierId: string;
   warehouseId: string;
   sellingPrice: number;
+  /** Current inventory cost per unit (weighted average of received purchases). */
   costPrice: number;
   stockQuantity: number;
   reorderLevel: number;
@@ -19,6 +21,7 @@ export type ProductRecord = {
   description: string;
   imagePath?: string;
 };
+
 
 export type CategoryRecord = {
   id: string;
