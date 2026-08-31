@@ -103,20 +103,22 @@ function ProductsPage() {
 
       <TaxTable
         rows={products}
-        searchKeys={(row) => `${row.name} ${row.sku} ${row.category}`}
+        searchKeys={(row) => `${row.name} ${row.sku} ${row.barcode} ${row.category}`}
         filter={{
           label: "Status",
           options: [
             { value: "In Stock", label: "In Stock" },
             { value: "Low Stock", label: "Low Stock" },
             { value: "Out of Stock", label: "Out of Stock" },
+            { value: "Archived", label: "Archived" },
           ],
-          match: (row, value) => stockStatus(row) === value,
+          match: (row, value) => (value === "Archived" ? !row.active : row.active && stockStatus(row) === value),
         }}
         columns={[
-          { key: "name", label: "Product", render: (row) => <span className="font-medium text-white">{row.name}</span> },
+          { key: "name", label: "Product", render: (row) => <span className="font-medium text-white">{row.name}{row.active ? "" : " (archived)"}</span> },
+          { key: "sku", label: "SKU", hideOnMobile: true, render: (row) => row.sku || "—" },
           { key: "category", label: "Category", hideOnMobile: true, render: (row) => row.category || "—" },
-          { key: "sellingPrice", label: "Price", render: (row) => formatMoney(row.sellingPrice) },
+          { key: "sellingPrice", label: "Selling price", render: (row) => formatMoney(row.sellingPrice) },
           { key: "stockQuantity", label: "Stock", render: (row) => String(row.stockQuantity) },
         ]}
         onRowClick={setDetail}
@@ -125,45 +127,57 @@ function ProductsPage() {
         onExport={(rows) =>
           exportCsv(
             "products.csv",
-            ["Product", "SKU", "Category", "Price", "Cost", "Stock"],
-            rows.map((row) => [row.name, row.sku, row.category, row.sellingPrice, row.costPrice, row.stockQuantity]),
+            ["Product", "SKU", "Barcode", "Category", "Selling price", "Inventory cost", "Stock"],
+            rows.map((row) => [row.name, row.sku, row.barcode, row.category, row.sellingPrice, row.costPrice, row.stockQuantity]),
           )
         }
         addLabel="New product"
         onAdd={openCreate}
-        empty={{ title: "No products yet", description: "Add products to start tracking stock and pricing.", icon: Package }}
+        empty={{ title: "No products yet", description: "A product is what you buy and sell. Adding one does not create stock — stock comes from purchases.", icon: Package }}
       />
 
       <RecordDialog
         open={formOpen}
         title={editing ? "Edit product" : "New product"}
-        description="Product catalogue details."
+        description="The master record of what you buy and sell. Suppliers and purchase costs are recorded on purchases, not here."
         submitLabel={editing ? "Update" : "Create"}
         initialValue={
           editing
             ? {
                 name: editing.name,
+                sku: editing.sku,
+                barcode: editing.barcode,
                 category: editing.category || (categoryNames[0] ?? ""),
-                supplier: nameOf(suppliers, editing.supplierId),
-                warehouse: nameOf(warehouses, editing.warehouseId),
                 sellingPrice: editing.sellingPrice,
-                costPrice: editing.costPrice,
+                reorderLevel: editing.reorderLevel,
                 description: editing.description,
               }
-            : null
+            : { reorderLevel: 5, stockQuantity: 0, costPrice: 0 }
         }
         onClose={() => setFormOpen(false)}
         onSubmit={submit}
         fields={[
           { name: "name", label: "Product name", type: "text", required: true, half: true },
           { name: "category", label: "Category", type: "select", options: categoryNames.length ? categoryNames : ["Uncategorised"], half: true },
-          { name: "supplier", label: "Supplier", type: "select", options: supplierNames, half: true },
-          { name: "warehouse", label: "Warehouse", type: "select", options: warehouseNames, half: true },
-          { name: "sellingPrice", label: "Selling price", type: "number", required: true, half: true },
-          { name: "costPrice", label: "Cost price", type: "number", half: true },
+          { name: "sku", label: "SKU", type: "text", half: true },
+          { name: "barcode", label: "Barcode", type: "text", half: true },
+          { name: "sellingPrice", label: "Selling price (current)", type: "number", required: true, half: true },
+          { name: "reorderLevel", label: "Reorder level", type: "number", half: true },
+          ...(editing
+            ? []
+            : ([
+                { name: "stockQuantity", label: "Opening stock (optional)", type: "number", half: true },
+                { name: "costPrice", label: "Opening cost per unit", type: "number", half: true },
+              ] as const)),
           { name: "description", label: "Description", type: "text" },
         ]}
-
+        extra={
+          <p className="text-[11px] text-white/45">
+            {editing
+              ? "Inventory cost is maintained automatically from received purchases. Changing the selling price never changes past sales."
+              : "Leave opening stock at 0 if you have no goods yet — stock arrives when you receive a purchase."}
+          </p>
+        }
       />
 
       <DetailsDrawer
@@ -176,14 +190,28 @@ function ProductsPage() {
             ? [
                 { label: "Photo", value: <ProductPhoto path={detail.imagePath} /> },
                 { label: "SKU", value: detail.sku || "—" },
+                { label: "Barcode", value: detail.barcode || "—" },
                 { label: "Category", value: detail.category || "—" },
-                { label: "Supplier", value: nameOf(suppliers, detail.supplierId) },
-                { label: "Warehouse", value: nameOf(warehouses, detail.warehouseId) },
-                { label: "Selling price", value: formatMoney(detail.sellingPrice) },
-                { label: "Cost price", value: formatMoney(detail.costPrice) },
-                { label: "Stock", value: String(detail.stockQuantity) },
+                { label: "Bought from", value: supplierList(detail) },
+                { label: "Selling price (current)", value: formatMoney(detail.sellingPrice) },
+                { label: "Inventory cost / unit", value: formatMoney(detail.costPrice) },
+                { label: "Stock on hand", value: String(detail.stockQuantity) },
+                { label: "Stock value", value: formatMoney(detail.stockQuantity * detail.costPrice) },
                 { label: "Reorder level", value: String(detail.reorderLevel) },
-                { label: "Status", value: <StatusBadge value={stockStatus(detail)} /> },
+                { label: "Status", value: <StatusBadge value={detail.active ? stockStatus(detail) : "Archived"} /> },
+                {
+                  label: "Purchase history",
+                  value: (
+                    <div className="space-y-1">
+                      {historyOf(detail).slice(0, 6).map(({ item, purchase }) => (
+                        <div key={item.id} className="text-xs text-white/80">
+                          {purchase?.purchaseDate ?? "—"} · {purchase?.supplierName || "—"} · {item.quantity} × {formatMoney(item.unitCost)}
+                        </div>
+                      ))}
+                      {historyOf(detail).length === 0 ? <span className="text-white/50">Not purchased yet</span> : null}
+                    </div>
+                  ),
+                },
                 { label: "Description", value: detail.description || "—" },
               ]
             : []
@@ -201,10 +229,11 @@ function ProductsPage() {
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Delete product"
-        description={`${pendingDelete?.name ?? ""} will be removed from your catalogue.`}
+        description={`${pendingDelete?.name ?? ""} will be deleted. If it already appears on purchases, sales or stock movements it is archived instead, so history stays readable.`}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => { if (pendingDelete) { deleteProduct(pendingDelete.id); toast.success("Product deleted"); } }}
+        onConfirm={() => { if (pendingDelete) { deleteProduct(pendingDelete.id); toast.success("Product removed or archived"); } }}
       />
+
     </TaxWorkspace>
   );
 }
