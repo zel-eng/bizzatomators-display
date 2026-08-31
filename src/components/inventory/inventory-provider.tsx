@@ -374,9 +374,15 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       for (const item of items) {
         const product = products.find((row) => row.id === item.productId);
         if (product) {
+          // Weighted-average inventory cost. Historical unit costs stay on the purchase item.
+          const nextQty = product.stockQuantity + item.quantity;
+          const nextCost =
+            nextQty > 0
+              ? (Math.max(0, product.stockQuantity) * product.costPrice + item.quantity * item.unitCost) / nextQty
+              : item.unitCost;
           await supabase
             .from("products")
-            .update({ stock_quantity: product.stockQuantity + item.quantity } as any)
+            .update({ stock_quantity: nextQty, cost_price: Math.round(nextCost * 100) / 100 } as any)
             .eq("id", product.id);
         }
         await logMovement({
@@ -385,6 +391,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           type: "Purchase",
           quantity: item.quantity,
           reference: purchase.purchaseNo,
+          notes: `Received from ${purchase.supplierName || "supplier"} @ ${item.unitCost}/unit`,
         });
       }
       await supabase.from("inventory_purchases").update({ status: "Received" } as any).eq("id", id);
@@ -392,6 +399,37 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     },
     [purchases, purchaseItems, products, logMovement, refresh],
   );
+
+  const returnPurchase = useCallback(
+    async (id: string, notes?: string) => {
+      const purchase = purchases.find((row) => row.id === id);
+      if (!purchase || purchase.status !== "Received") return;
+      const reference = `RTN ${purchase.purchaseNo}`;
+      if (movements.some((row) => row.reference === reference)) return;
+      const items = purchaseItems.filter((item) => item.purchaseId === id);
+      for (const item of items) {
+        const product = products.find((row) => row.id === item.productId);
+        if (product) {
+          await supabase
+            .from("products")
+            .update({ stock_quantity: Math.max(0, product.stockQuantity - item.quantity) } as any)
+            .eq("id", product.id);
+        }
+        await logMovement({
+          productId: item.productId,
+          productName: item.productName,
+          type: "Stock Out",
+          quantity: -item.quantity,
+          reference,
+          notes: notes || `Returned to ${purchase.supplierName || "supplier"}`,
+        });
+      }
+      await refresh();
+    },
+    [purchases, purchaseItems, products, movements, logMovement, refresh],
+  );
+
+
 
   const completeTransfer = useCallback(
     async (id: string) => {
