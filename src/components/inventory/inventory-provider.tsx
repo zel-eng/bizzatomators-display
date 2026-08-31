@@ -460,6 +460,27 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     };
   }, [products]);
 
+  /**
+   * Products carrying history are archived (active = false) instead of deleted,
+   * so purchases, sales and stock movements stay readable.
+   */
+  const deleteProduct = useCallback(
+    (id: string) => {
+      void (async () => {
+        const [items, sold, moved] = await Promise.all([
+          supabase.from("inventory_purchase_items").select("id").eq("product_id", id).limit(1),
+          supabase.from("sale_items").select("id").eq("product_id", id).limit(1),
+          supabase.from("stock_movements").select("id").eq("product_id", id).limit(1),
+        ]);
+        const hasHistory = [items, sold, moved].some((result) => (result.data ?? []).length > 0);
+        if (hasHistory) await supabase.from("products").update({ active: false } as any).eq("id", id);
+        else await supabase.from("products").delete().eq("id", id);
+        await refresh();
+      })();
+    },
+    [refresh],
+  );
+
   const value: ContextValue = {
     loading,
     products,
@@ -473,7 +494,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     metrics,
     refresh,
     saveProduct: makeSave<Omit<ProductRecord, "id">>("products", productRow),
-    deleteProduct: makeDelete("products"),
+    deleteProduct,
     saveCategory: makeSave<Omit<CategoryRecord, "id">>("product_categories", categoryRow),
     deleteCategory: makeDelete("product_categories"),
     saveSupplier: makeSave<Omit<SupplierRecord, "id">>("suppliers", supplierRow),
@@ -483,11 +504,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     savePurchase,
     deletePurchase: makeDelete("inventory_purchases"),
     receivePurchase,
+    returnPurchase,
     saveTransfer: makeSave<Omit<TransferRecord, "id">>("stock_transfers", transferRow),
     deleteTransfer: makeDelete("stock_transfers"),
     completeTransfer,
     adjustStock,
   };
+
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>;
 }
