@@ -157,20 +157,21 @@ const num = (v: unknown) => Number(v ?? 0);
 const str = (v: unknown) => (v == null ? "" : String(v));
 
 const mapProduct = (r: any): ProductRecord => ({
-  id: r.id, name: str(r.name), sku: str(r.sku), category: str(r.category),
+  id: r.id, name: str(r.name), sku: str(r.sku), barcode: str(r.barcode), category: str(r.category),
   categoryId: str(r.category_id), supplierId: str(r.supplier_id), warehouseId: str(r.warehouse_id),
   sellingPrice: num(r.selling_price), costPrice: num(r.cost_price),
   stockQuantity: num(r.stock_quantity), reorderLevel: num(r.reorder_level),
   active: r.active !== false, description: str(r.description), imagePath: str(r.image_path),
 });
 const productRow = (r: Omit<ProductRecord, "id">) => ({
-  name: r.name, sku: r.sku || null, category: r.category || null,
+  name: r.name, sku: r.sku || null, barcode: r.barcode || null, category: r.category || null,
   category_id: r.categoryId || null, supplier_id: r.supplierId || null, warehouse_id: r.warehouseId || null,
   selling_price: r.sellingPrice, cost_price: r.costPrice,
   stock_quantity: r.stockQuantity, reorder_level: r.reorderLevel,
   active: r.active, description: r.description || null,
   ...(r.imagePath === undefined ? {} : { image_path: r.imagePath || null }),
 });
+
 
 const mapCategory = (r: any): CategoryRecord => ({ id: r.id, name: str(r.name), description: str(r.description) });
 const categoryRow = (r: Omit<CategoryRecord, "id">) => ({ name: r.name, description: r.description || null });
