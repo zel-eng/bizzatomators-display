@@ -14,41 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
+      customer_channels: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      customer_segments: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          min_orders: number
+          min_spend: number
+          name: string
+          rule_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          min_orders?: number
+          min_spend?: number
+          name: string
+          rule_type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          min_orders?: number
+          min_spend?: number
+          name?: string
+          rule_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string | null
           balance: number
+          channel_id: string | null
           created_at: string
           created_by: string | null
           credit_limit: number
+          customer_type: string
           email: string | null
           id: string
+          location: string | null
           name: string
           phone: string | null
+          segment_id: string | null
+          status: string
           updated_at: string
         }
         Insert: {
           address?: string | null
           balance?: number
+          channel_id?: string | null
           created_at?: string
           created_by?: string | null
           credit_limit?: number
+          customer_type?: string
           email?: string | null
           id?: string
+          location?: string | null
           name: string
           phone?: string | null
+          segment_id?: string | null
+          status?: string
           updated_at?: string
         }
         Update: {
           address?: string | null
           balance?: number
+          channel_id?: string | null
           created_at?: string
           created_by?: string | null
           credit_limit?: number
+          customer_type?: string
           email?: string | null
           id?: string
+          location?: string | null
           name?: string
           phone?: string | null
+          segment_id?: string | null
+          status?: string
           updated_at?: string
         }
         Relationships: []
@@ -111,6 +189,56 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "expense_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_campaigns: {
+        Row: {
+          budget: number
+          channel: string
+          created_at: string
+          description: string | null
+          end_date: string | null
+          id: string
+          name: string
+          start_date: string | null
+          status: string
+          target_segment_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          budget?: number
+          channel?: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          start_date?: string | null
+          status?: string
+          target_segment_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          budget?: number
+          channel?: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          start_date?: string | null
+          status?: string
+          target_segment_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_campaigns_target_segment_id_fkey"
+            columns: ["target_segment_id"]
+            isOneToOne: false
+            referencedRelation: "customer_segments"
             referencedColumns: ["id"]
           },
         ]
