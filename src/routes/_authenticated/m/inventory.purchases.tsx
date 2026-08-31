@@ -206,7 +206,7 @@ function PurchasesPage() {
         fields={[
           { name: "supplier", label: "Supplier", type: "select", options: suppliers.length ? suppliers.map((row) => row.name) : ["—"], half: true },
           { name: "purchaseDate", label: "Purchase date", type: "date", required: true, half: true },
-          { name: "status", label: "Status", type: "select", options: ["Pending", "Received", "Cancelled"], half: true },
+          { name: "status", label: "Status", type: "select", options: ["Pending", "Cancelled"], half: true },
           { name: "notes", label: "Notes / reference", type: "text" },
         ]}
         extra={
