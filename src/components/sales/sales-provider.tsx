@@ -322,13 +322,39 @@ export function SalesProvider({ children }: { children: ReactNode }) {
 
   /* ----------------------------- stock effects ---------------------------- */
 
+  /**
+   * Stock is a single source of truth: a sale may never silently push it negative.
+   * Returns a human readable shortage message, or null when every line can be fulfilled.
+   * Lines without a productId are services and are skipped.
+   */
+  const checkStock = useCallback(
+    async (items: { productId: string; productName: string; quantity: number }[]) => {
+      const shortages: string[] = [];
+      for (const item of items) {
+        if (!item.productId) continue;
+        const { data } = await supabase
+          .from("products")
+          .select("stock_quantity, name")
+          .eq("id", item.productId)
+          .maybeSingle();
+        if (!data) continue;
+        const available = num((data as any).stock_quantity);
+        if (available < item.quantity) {
+          shortages.push(`${(data as any).name ?? item.productName}: ${available} available, ${item.quantity} requested`);
+        }
+      }
+      return shortages.length ? `Not enough stock — ${shortages.join("; ")}` : null;
+    },
+    [],
+  );
+
   const moveStock = useCallback(
     async (items: { productId: string; productName: string; quantity: number }[], direction: "out" | "in", reference: string) => {
       for (const item of items) {
         if (!item.productId) continue;
         const { data } = await supabase.from("products").select("stock_quantity").eq("id", item.productId).maybeSingle();
         const current = num((data as any)?.stock_quantity);
-        const next = direction === "out" ? Math.max(0, current - item.quantity) : current + item.quantity;
+        const next = direction === "out" ? current - item.quantity : current + item.quantity;
         await supabase.from("products").update({ stock_quantity: next } as any).eq("id", item.productId);
         await supabase.from("stock_movements").insert({
           product_id: item.productId,
@@ -342,6 +368,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
 
   /* -------------------------------- sales -------------------------------- */
 
