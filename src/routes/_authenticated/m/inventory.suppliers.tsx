@@ -3,20 +3,29 @@ import { useState } from "react";
 import { Truck, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useInventory, type SupplierRecord } from "@/components/inventory/inventory-provider";
+import { useInventory, formatMoney, type SupplierRecord } from "@/components/inventory/inventory-provider";
 import { RecordDialog, ConfirmDialog, str, type FieldValue } from "@/components/tax/record-dialog";
 import { DetailsDrawer, StatusBadge, SummaryStrip, TaxTable, TaxWorkspace, exportCsv } from "@/components/tax/tax-workspace";
 
 export const Route = createFileRoute("/_authenticated/m/inventory/suppliers")({ component: SuppliersPage });
 
 function SuppliersPage() {
-  const { suppliers, products, saveSupplier, deleteSupplier } = useInventory();
+  const { suppliers, purchases, purchaseItems, saveSupplier, deleteSupplier } = useInventory();
   const [editing, setEditing] = useState<SupplierRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [detail, setDetail] = useState<SupplierRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SupplierRecord | null>(null);
 
-  const countFor = (row: SupplierRecord) => products.filter((product) => product.supplierId === row.id).length;
+  // A supplier relates to products through purchase history, not through the product record.
+  const purchasesOf = (row: SupplierRecord) => purchases.filter((p) => p.supplierId === row.id);
+  const countFor = (row: SupplierRecord) => {
+    const ids = new Set(purchasesOf(row).map((p) => p.id));
+    return new Set(purchaseItems.filter((item) => ids.has(item.purchaseId)).map((item) => item.productId)).size;
+  };
+  const spendFor = (row: SupplierRecord) => purchasesOf(row).reduce((sum, p) => sum + p.total, 0);
+  const lastPurchase = (row: SupplierRecord) =>
+    purchasesOf(row).map((p) => p.purchaseDate).sort().at(-1) ?? "—";
+
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (row: SupplierRecord) => { setEditing(row); setFormOpen(true); };
@@ -69,15 +78,16 @@ function SuppliersPage() {
         columns={[
           { key: "name", label: "Supplier", render: (row) => <span className="font-medium text-white">{row.name}</span> },
           { key: "phone", label: "Phone", render: (row) => row.phone || "—" },
-          { key: "products", label: "Products", render: (row) => String(countFor(row)) },
+          { key: "products", label: "Products supplied", hideOnMobile: true, render: (row) => String(countFor(row)) },
+          { key: "purchases", label: "Purchases", render: (row) => String(purchasesOf(row).length) },
         ]}
         onRowClick={setDetail}
         onEdit={openEdit}
         onDelete={setPendingDelete}
-        onExport={(rows) => exportCsv("suppliers.csv", ["Supplier", "Phone", "Products", "Status"], rows.map((row) => [row.name, row.phone, countFor(row), row.status]))}
+        onExport={(rows) => exportCsv("suppliers.csv", ["Supplier", "Phone", "Products supplied", "Purchases", "Total spend", "Last purchase", "Status"], rows.map((row) => [row.name, row.phone, countFor(row), purchasesOf(row).length, spendFor(row), lastPurchase(row), row.status]))}
         addLabel="New supplier"
         onAdd={openCreate}
-        empty={{ title: "No suppliers yet", description: "Add suppliers to link purchases and products.", icon: Truck }}
+        empty={{ title: "No suppliers yet", description: "Suppliers are who you buy from. Link them on purchases to build history.", icon: Truck }}
       />
 
       <RecordDialog
@@ -108,7 +118,10 @@ function SuppliersPage() {
             ? [
                 { label: "Phone", value: detail.phone || "—" },
                 { label: "Address", value: detail.address || "—" },
-                { label: "Products", value: String(countFor(detail)) },
+                { label: "Products supplied", value: String(countFor(detail)) },
+                { label: "Purchases", value: String(purchasesOf(detail).length) },
+                { label: "Total spend", value: formatMoney(spendFor(detail)) },
+                { label: "Last purchase", value: lastPurchase(detail) },
                 { label: "Status", value: <StatusBadge value={detail.status} /> },
                 { label: "Notes", value: detail.notes || "—" },
               ]

@@ -22,7 +22,7 @@ function ProductPhoto({ path }: { path?: string }) {
 export const Route = createFileRoute("/_authenticated/m/inventory/products")({ component: ProductsPage });
 
 function ProductsPage() {
-  const { products, categories, suppliers, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
+  const { products, categories, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
   const [editing, setEditing] = useState<ProductRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [detail, setDetail] = useState<ProductRecord | null>(null);

@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+
 import { deleteLinkedPayments, resolveAccount, upsertMirrorPayment } from "@/lib/finance-link";
 
 
@@ -322,13 +324,39 @@ export function SalesProvider({ children }: { children: ReactNode }) {
 
   /* ----------------------------- stock effects ---------------------------- */
 
+  /**
+   * Stock is a single source of truth: a sale may never silently push it negative.
+   * Returns a human readable shortage message, or null when every line can be fulfilled.
+   * Lines without a productId are services and are skipped.
+   */
+  const checkStock = useCallback(
+    async (items: { productId: string; productName: string; quantity: number }[]) => {
+      const shortages: string[] = [];
+      for (const item of items) {
+        if (!item.productId) continue;
+        const { data } = await supabase
+          .from("products")
+          .select("stock_quantity, name")
+          .eq("id", item.productId)
+          .maybeSingle();
+        if (!data) continue;
+        const available = num((data as any).stock_quantity);
+        if (available < item.quantity) {
+          shortages.push(`${(data as any).name ?? item.productName}: ${available} available, ${item.quantity} requested`);
+        }
+      }
+      return shortages.length ? `Not enough stock — ${shortages.join("; ")}` : null;
+    },
+    [],
+  );
+
   const moveStock = useCallback(
     async (items: { productId: string; productName: string; quantity: number }[], direction: "out" | "in", reference: string) => {
       for (const item of items) {
         if (!item.productId) continue;
         const { data } = await supabase.from("products").select("stock_quantity").eq("id", item.productId).maybeSingle();
         const current = num((data as any)?.stock_quantity);
-        const next = direction === "out" ? Math.max(0, current - item.quantity) : current + item.quantity;
+        const next = direction === "out" ? current - item.quantity : current + item.quantity;
         await supabase.from("products").update({ stock_quantity: next } as any).eq("id", item.productId);
         await supabase.from("stock_movements").insert({
           product_id: item.productId,
@@ -342,6 +370,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
 
   /* -------------------------------- sales -------------------------------- */
 
@@ -384,23 +413,35 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     async (record: Omit<SaleRecord, "id">, items: LineItem[], id?: string) => {
       let saleId = id ?? null;
       const previous = id ? sales.find((row) => row.id === id) : undefined;
+      const wasCompleted = previous?.status === "Completed";
+      const willTakeStock = record.status === "Completed" && !wasCompleted;
+
+      // Never let a completed sale drive stock negative — keep it as a draft instead.
+      let effective = record;
+      if (willTakeStock) {
+        const shortage = await checkStock(items);
+        if (shortage) {
+          toast.error(shortage, { description: "Sale saved as draft. Receive a purchase or adjust stock first." });
+          effective = { ...record, status: "Draft" };
+        }
+      }
+
       if (id) {
-        await supabase.from("sales").update(saleRow(record) as any).eq("id", id);
+        await supabase.from("sales").update(saleRow(effective) as any).eq("id", id);
       } else {
-        const { data } = await supabase.from("sales").insert(saleRow(record) as any).select("id").single();
+        const { data } = await supabase.from("sales").insert(saleRow(effective) as any).select("id").single();
         saleId = (data as any)?.id ?? null;
       }
       if (!saleId) return null;
       await writeItems("sale_items", "sale_id", saleId, items);
 
-      const wasCompleted = previous?.status === "Completed";
-      if (record.status === "Completed" && !wasCompleted) {
-        await moveStock(items, "out", record.invoiceNumber);
+      if (effective.status === "Completed" && !wasCompleted) {
+        await moveStock(items, "out", effective.invoiceNumber);
       }
       await refresh();
       return saleId;
     },
-    [sales, writeItems, moveStock, refresh],
+    [sales, writeItems, moveStock, checkStock, refresh],
   );
 
   const completeDraft = useCallback(
@@ -408,11 +449,17 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       const sale = sales.find((row) => row.id === id);
       if (!sale || sale.status === "Completed") return;
       const items = saleItems.filter((item) => item.saleId === id);
+      const shortage = await checkStock(items);
+      if (shortage) {
+        toast.error(shortage, { description: "Receive a purchase or adjust stock before completing this sale." });
+        return;
+      }
       await supabase.from("sales").update({ status: "completed", amount_paid: sale.total } as any).eq("id", id);
       await moveStock(items, "out", sale.invoiceNumber);
       await refresh();
     },
-    [sales, saleItems, moveStock, refresh],
+    [sales, saleItems, moveStock, checkStock, refresh],
+
   );
 
   const deleteSale = useCallback(
