@@ -136,7 +136,11 @@ type ContextValue = {
     id?: string,
   ) => Promise<void>;
   deletePurchase: (id: string) => void;
+  /** Marks a purchase as received: stock increases and inventory cost is re-averaged. */
   receivePurchase: (id: string) => Promise<void>;
+  /** Returns received goods to the supplier: stock decreases, purchase stays historical. */
+  returnPurchase: (id: string, notes?: string) => Promise<void>;
+
   saveTransfer: (record: Omit<TransferRecord, "id">, id?: string) => void;
   deleteTransfer: (id: string) => void;
   completeTransfer: (id: string) => Promise<void>;
