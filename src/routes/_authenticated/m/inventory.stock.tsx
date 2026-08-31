@@ -14,14 +14,18 @@ function StockPage() {
   const [target, setTarget] = useState<ProductRecord | null>(null);
   const [detail, setDetail] = useState<ProductRecord | null>(null);
 
+  const ledgerOf = (product: ProductRecord) => movements.filter((row) => row.productId === product.id).slice(0, 8);
+
   const submit = (value: Record<string, FieldValue>) => {
     if (!target) return;
     const type = str(value.type) as MovementType;
+    const reason = str(value.reason);
+    const notes = [reason && reason !== "—" ? reason : "", str(value.notes)].filter(Boolean).join(" — ");
     void adjustStock({
       productId: target.id,
       type,
       quantity: num(value.quantity),
-      notes: str(value.notes),
+      notes,
       reference: type === "Adjustment" ? "set" : undefined,
     });
     toast.success(`${type} recorded for ${target.name}`);
@@ -30,7 +34,7 @@ function StockPage() {
   return (
     <TaxWorkspace
       title="Stock"
-      subtitle="Stock in, stock out and adjustments"
+      subtitle="One source of truth: stock changes only through purchases, sales, returns and adjustments"
       icon={Boxes}
       backTo="/m/inventory"
       backLabel="Back to Inventory"
@@ -42,6 +46,7 @@ function StockPage() {
 
         ]}
       />
+
 
       <TaxTable
         rows={products}
