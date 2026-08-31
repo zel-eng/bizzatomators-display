@@ -7,11 +7,13 @@ export type ProductRecord = {
   id: string;
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   categoryId: string;
   supplierId: string;
   warehouseId: string;
   sellingPrice: number;
+  /** Current inventory cost per unit (weighted average of received purchases). */
   costPrice: number;
   stockQuantity: number;
   reorderLevel: number;
@@ -19,6 +21,7 @@ export type ProductRecord = {
   description: string;
   imagePath?: string;
 };
+
 
 export type CategoryRecord = {
   id: string;
@@ -133,7 +136,11 @@ type ContextValue = {
     id?: string,
   ) => Promise<void>;
   deletePurchase: (id: string) => void;
+  /** Marks a purchase as received: stock increases and inventory cost is re-averaged. */
   receivePurchase: (id: string) => Promise<void>;
+  /** Returns received goods to the supplier: stock decreases, purchase stays historical. */
+  returnPurchase: (id: string, notes?: string) => Promise<void>;
+
   saveTransfer: (record: Omit<TransferRecord, "id">, id?: string) => void;
   deleteTransfer: (id: string) => void;
   completeTransfer: (id: string) => Promise<void>;
@@ -154,20 +161,21 @@ const num = (v: unknown) => Number(v ?? 0);
 const str = (v: unknown) => (v == null ? "" : String(v));
 
 const mapProduct = (r: any): ProductRecord => ({
-  id: r.id, name: str(r.name), sku: str(r.sku), category: str(r.category),
+  id: r.id, name: str(r.name), sku: str(r.sku), barcode: str(r.barcode), category: str(r.category),
   categoryId: str(r.category_id), supplierId: str(r.supplier_id), warehouseId: str(r.warehouse_id),
   sellingPrice: num(r.selling_price), costPrice: num(r.cost_price),
   stockQuantity: num(r.stock_quantity), reorderLevel: num(r.reorder_level),
   active: r.active !== false, description: str(r.description), imagePath: str(r.image_path),
 });
 const productRow = (r: Omit<ProductRecord, "id">) => ({
-  name: r.name, sku: r.sku || null, category: r.category || null,
+  name: r.name, sku: r.sku || null, barcode: r.barcode || null, category: r.category || null,
   category_id: r.categoryId || null, supplier_id: r.supplierId || null, warehouse_id: r.warehouseId || null,
   selling_price: r.sellingPrice, cost_price: r.costPrice,
   stock_quantity: r.stockQuantity, reorder_level: r.reorderLevel,
   active: r.active, description: r.description || null,
   ...(r.imagePath === undefined ? {} : { image_path: r.imagePath || null }),
 });
+
 
 const mapCategory = (r: any): CategoryRecord => ({ id: r.id, name: str(r.name), description: str(r.description) });
 const categoryRow = (r: Omit<CategoryRecord, "id">) => ({ name: r.name, description: r.description || null });
@@ -366,9 +374,15 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       for (const item of items) {
         const product = products.find((row) => row.id === item.productId);
         if (product) {
+          // Weighted-average inventory cost. Historical unit costs stay on the purchase item.
+          const nextQty = product.stockQuantity + item.quantity;
+          const nextCost =
+            nextQty > 0
+              ? (Math.max(0, product.stockQuantity) * product.costPrice + item.quantity * item.unitCost) / nextQty
+              : item.unitCost;
           await supabase
             .from("products")
-            .update({ stock_quantity: product.stockQuantity + item.quantity } as any)
+            .update({ stock_quantity: nextQty, cost_price: Math.round(nextCost * 100) / 100 } as any)
             .eq("id", product.id);
         }
         await logMovement({
@@ -377,6 +391,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           type: "Purchase",
           quantity: item.quantity,
           reference: purchase.purchaseNo,
+          notes: `Received from ${purchase.supplierName || "supplier"} @ ${item.unitCost}/unit`,
         });
       }
       await supabase.from("inventory_purchases").update({ status: "Received" } as any).eq("id", id);
@@ -384,6 +399,37 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     },
     [purchases, purchaseItems, products, logMovement, refresh],
   );
+
+  const returnPurchase = useCallback(
+    async (id: string, notes?: string) => {
+      const purchase = purchases.find((row) => row.id === id);
+      if (!purchase || purchase.status !== "Received") return;
+      const reference = `RTN ${purchase.purchaseNo}`;
+      if (movements.some((row) => row.reference === reference)) return;
+      const items = purchaseItems.filter((item) => item.purchaseId === id);
+      for (const item of items) {
+        const product = products.find((row) => row.id === item.productId);
+        if (product) {
+          await supabase
+            .from("products")
+            .update({ stock_quantity: Math.max(0, product.stockQuantity - item.quantity) } as any)
+            .eq("id", product.id);
+        }
+        await logMovement({
+          productId: item.productId,
+          productName: item.productName,
+          type: "Stock Out",
+          quantity: -item.quantity,
+          reference,
+          notes: notes || `Returned to ${purchase.supplierName || "supplier"}`,
+        });
+      }
+      await refresh();
+    },
+    [purchases, purchaseItems, products, movements, logMovement, refresh],
+  );
+
+
 
   const completeTransfer = useCallback(
     async (id: string) => {
@@ -414,6 +460,27 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     };
   }, [products]);
 
+  /**
+   * Products carrying history are archived (active = false) instead of deleted,
+   * so purchases, sales and stock movements stay readable.
+   */
+  const deleteProduct = useCallback(
+    (id: string) => {
+      void (async () => {
+        const [items, sold, moved] = await Promise.all([
+          supabase.from("inventory_purchase_items").select("id").eq("product_id", id).limit(1),
+          supabase.from("sale_items").select("id").eq("product_id", id).limit(1),
+          supabase.from("stock_movements").select("id").eq("product_id", id).limit(1),
+        ]);
+        const hasHistory = [items, sold, moved].some((result) => (result.data ?? []).length > 0);
+        if (hasHistory) await supabase.from("products").update({ active: false } as any).eq("id", id);
+        else await supabase.from("products").delete().eq("id", id);
+        await refresh();
+      })();
+    },
+    [refresh],
+  );
+
   const value: ContextValue = {
     loading,
     products,
@@ -427,7 +494,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     metrics,
     refresh,
     saveProduct: makeSave<Omit<ProductRecord, "id">>("products", productRow),
-    deleteProduct: makeDelete("products"),
+    deleteProduct,
     saveCategory: makeSave<Omit<CategoryRecord, "id">>("product_categories", categoryRow),
     deleteCategory: makeDelete("product_categories"),
     saveSupplier: makeSave<Omit<SupplierRecord, "id">>("suppliers", supplierRow),
@@ -437,11 +504,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     savePurchase,
     deletePurchase: makeDelete("inventory_purchases"),
     receivePurchase,
+    returnPurchase,
     saveTransfer: makeSave<Omit<TransferRecord, "id">>("stock_transfers", transferRow),
     deleteTransfer: makeDelete("stock_transfers"),
     completeTransfer,
     adjustStock,
   };
+
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>;
 }
