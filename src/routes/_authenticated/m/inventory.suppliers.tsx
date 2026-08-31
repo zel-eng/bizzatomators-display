@@ -10,13 +10,22 @@ import { DetailsDrawer, StatusBadge, SummaryStrip, TaxTable, TaxWorkspace, expor
 export const Route = createFileRoute("/_authenticated/m/inventory/suppliers")({ component: SuppliersPage });
 
 function SuppliersPage() {
-  const { suppliers, products, saveSupplier, deleteSupplier } = useInventory();
+  const { suppliers, purchases, purchaseItems, saveSupplier, deleteSupplier } = useInventory();
   const [editing, setEditing] = useState<SupplierRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [detail, setDetail] = useState<SupplierRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SupplierRecord | null>(null);
 
-  const countFor = (row: SupplierRecord) => products.filter((product) => product.supplierId === row.id).length;
+  // A supplier relates to products through purchase history, not through the product record.
+  const purchasesOf = (row: SupplierRecord) => purchases.filter((p) => p.supplierId === row.id);
+  const countFor = (row: SupplierRecord) => {
+    const ids = new Set(purchasesOf(row).map((p) => p.id));
+    return new Set(purchaseItems.filter((item) => ids.has(item.purchaseId)).map((item) => item.productId)).size;
+  };
+  const spendFor = (row: SupplierRecord) => purchasesOf(row).reduce((sum, p) => sum + p.total, 0);
+  const lastPurchase = (row: SupplierRecord) =>
+    purchasesOf(row).map((p) => p.purchaseDate).sort().at(-1) ?? "—";
+
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (row: SupplierRecord) => { setEditing(row); setFormOpen(true); };
