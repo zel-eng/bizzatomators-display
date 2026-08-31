@@ -411,23 +411,35 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     async (record: Omit<SaleRecord, "id">, items: LineItem[], id?: string) => {
       let saleId = id ?? null;
       const previous = id ? sales.find((row) => row.id === id) : undefined;
+      const wasCompleted = previous?.status === "Completed";
+      const willTakeStock = record.status === "Completed" && !wasCompleted;
+
+      // Never let a completed sale drive stock negative — keep it as a draft instead.
+      let effective = record;
+      if (willTakeStock) {
+        const shortage = await checkStock(items);
+        if (shortage) {
+          toast.error(shortage, { description: "Sale saved as draft. Receive a purchase or adjust stock first." });
+          effective = { ...record, status: "Draft" };
+        }
+      }
+
       if (id) {
-        await supabase.from("sales").update(saleRow(record) as any).eq("id", id);
+        await supabase.from("sales").update(saleRow(effective) as any).eq("id", id);
       } else {
-        const { data } = await supabase.from("sales").insert(saleRow(record) as any).select("id").single();
+        const { data } = await supabase.from("sales").insert(saleRow(effective) as any).select("id").single();
         saleId = (data as any)?.id ?? null;
       }
       if (!saleId) return null;
       await writeItems("sale_items", "sale_id", saleId, items);
 
-      const wasCompleted = previous?.status === "Completed";
-      if (record.status === "Completed" && !wasCompleted) {
-        await moveStock(items, "out", record.invoiceNumber);
+      if (effective.status === "Completed" && !wasCompleted) {
+        await moveStock(items, "out", effective.invoiceNumber);
       }
       await refresh();
       return saleId;
     },
-    [sales, writeItems, moveStock, refresh],
+    [sales, writeItems, moveStock, checkStock, refresh],
   );
 
   const completeDraft = useCallback(
@@ -435,11 +447,17 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       const sale = sales.find((row) => row.id === id);
       if (!sale || sale.status === "Completed") return;
       const items = saleItems.filter((item) => item.saleId === id);
+      const shortage = await checkStock(items);
+      if (shortage) {
+        toast.error(shortage, { description: "Receive a purchase or adjust stock before completing this sale." });
+        return;
+      }
       await supabase.from("sales").update({ status: "completed", amount_paid: sale.total } as any).eq("id", id);
       await moveStock(items, "out", sale.invoiceNumber);
       await refresh();
     },
-    [sales, saleItems, moveStock, refresh],
+    [sales, saleItems, moveStock, checkStock, refresh],
+
   );
 
   const deleteSale = useCallback(
