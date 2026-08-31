@@ -22,35 +22,54 @@ function ProductPhoto({ path }: { path?: string }) {
 export const Route = createFileRoute("/_authenticated/m/inventory/products")({ component: ProductsPage });
 
 function ProductsPage() {
-  const { products, categories, suppliers, warehouses, saveProduct, deleteProduct, metrics } = useInventory();
+  const { products, categories, suppliers, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
   const [editing, setEditing] = useState<ProductRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [detail, setDetail] = useState<ProductRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProductRecord | null>(null);
 
   const categoryNames = categories.map((row) => row.name);
-  const supplierNames = ["—", ...suppliers.map((row) => row.name)];
-  const warehouseNames = ["—", ...warehouses.map((row) => row.name)];
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (row: ProductRecord) => { setEditing(row); setFormOpen(true); };
 
+  /** Purchase history for a product — this is where supplier and historical cost live. */
+  const historyOf = (product: ProductRecord) =>
+    purchaseItems
+      .filter((item) => item.productId === product.id)
+      .map((item) => ({ item, purchase: purchases.find((row) => row.id === item.purchaseId) }))
+      .sort((a, b) => (b.purchase?.purchaseDate ?? "").localeCompare(a.purchase?.purchaseDate ?? ""));
+
+  const supplierList = (product: ProductRecord) => {
+    const names = Array.from(new Set(historyOf(product).map((row) => row.purchase?.supplierName).filter(Boolean)));
+    return names.length ? names.join(", ") : "—";
+  };
+
   const submit = (value: Record<string, FieldValue>) => {
     const categoryName = str(value.category);
-    const supplierName = str(value.supplier);
-    const warehouseName = str(value.warehouse);
+    const sku = str(value.sku).trim();
+    const barcode = str(value.barcode).trim();
+    const clash = products.find(
+      (row) =>
+        row.id !== editing?.id &&
+        ((sku && row.sku.toLowerCase() === sku.toLowerCase()) || (barcode && row.barcode.toLowerCase() === barcode.toLowerCase())),
+    );
+    if (clash) { toast.error(`SKU or barcode already used by ${clash.name}`); return; }
+
     saveProduct(
       {
         name: str(value.name),
-        sku: editing?.sku ?? "",
+        sku,
+        barcode,
         category: categoryName,
         categoryId: categories.find((row) => row.name === categoryName)?.id ?? "",
-        supplierId: suppliers.find((row) => row.name === supplierName)?.id ?? "",
-        warehouseId: warehouses.find((row) => row.name === warehouseName)?.id ?? "",
+        // Suppliers belong to purchases, not to the product master record.
+        supplierId: editing?.supplierId ?? "",
+        warehouseId: editing?.warehouseId ?? "",
         sellingPrice: num(value.sellingPrice),
-        costPrice: num(value.costPrice),
-        stockQuantity: editing?.stockQuantity ?? 0,
-        reorderLevel: editing?.reorderLevel ?? 5,
+        costPrice: editing ? editing.costPrice : num(value.costPrice),
+        stockQuantity: editing?.stockQuantity ?? num(value.stockQuantity),
+        reorderLevel: num(value.reorderLevel),
         active: editing?.active ?? true,
         description: str(value.description),
       },
@@ -60,7 +79,6 @@ function ProductsPage() {
   };
 
 
-  const nameOf = (list: { id: string; name: string }[], id: string) => list.find((row) => row.id === id)?.name ?? "—";
 
   return (
     <TaxWorkspace
