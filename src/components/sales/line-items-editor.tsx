@@ -23,10 +23,10 @@ export function LineItemsEditor({
 
   const results = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return products.slice(0, 6);
+    if (!term) return products.slice(0, 12);
     return products
       .filter((product) => `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(term))
-      .slice(0, 8);
+      .slice(0, 18);
   }, [products, query]);
 
   const add = (product: SalesProduct) => {
@@ -63,27 +63,43 @@ export function LineItemsEditor({
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search product by name, SKU or category"
+          placeholder="Search product by name"
           className="h-9 border-0 bg-transparent px-0 text-sm text-white placeholder:text-white/40 focus-visible:ring-0"
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {results.map((product) => (
-          <button
-            key={product.id}
-            type="button"
-            onClick={() => add(product)}
-            className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-left text-xs text-white transition hover:bg-amber-400/20"
-          >
-            <span className="block font-semibold">{product.name}</span>
-            <span className="block text-white/55">
-              {formatMoney(product.sellingPrice)} · stock {product.stockQuantity}
-            </span>
-          </button>
-        ))}
+      {/* Visual picker: tap a photo card to add the product to the sale. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {results.map((product) => {
+          const inCart = items.find((item) => item.productId === product.id);
+          return (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => add(product)}
+              className={`overflow-hidden rounded-xl border text-left transition ${
+                inCart ? "border-amber-300/70 bg-amber-400/15" : "border-white/15 bg-white/5 hover:bg-white/10"
+              }`}
+            >
+              <div className="relative">
+                <ProductThumb path={product.imagePath} alt={product.name} className="h-24 w-full" />
+                {inCart ? (
+                  <span className="absolute right-1 top-1 grid h-6 min-w-6 place-items-center rounded-full bg-amber-400 px-1.5 text-xs font-bold text-black">
+                    {inCart.quantity}
+                  </span>
+                ) : null}
+              </div>
+              <div className="p-2">
+                <p className="truncate text-xs font-semibold text-white">{product.name}</p>
+                <p className="text-[11px] text-amber-300">{formatMoney(product.sellingPrice)}</p>
+                <p className="text-[10px] text-white/50">stock {product.stockQuantity}</p>
+              </div>
+            </button>
+          );
+        })}
         {results.length === 0 ? <p className="text-xs text-white/50">No products found in Inventory.</p> : null}
       </div>
+
 
       <div className="rounded-2xl border border-white/15 bg-black/20">
         {items.length === 0 ? (
