@@ -24,6 +24,8 @@ export type Field = {
   half?: boolean;
   /** Render the field only when this predicate passes for the current values. */
   showIf?: (values: Record<string, FieldValue>) => boolean;
+  /** Optional shortcut shown next to the label, e.g. "+ New supplier". */
+  action?: { label: string; onClick: () => void };
 };
 
 export function RecordDialog({
@@ -117,7 +119,18 @@ export function RecordDialog({
           const invalid = touched && field.required && values[field.name] === "";
           return (
             <div key={field.name} className={field.half ? "sm:col-span-1" : "sm:col-span-2"}>
-              <Label className={panelLabelCls}>{field.label}</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label className={panelLabelCls}>{field.label}</Label>
+                {field.action ? (
+                  <button
+                    type="button"
+                    onClick={field.action.onClick}
+                    className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200 hover:bg-amber-400/20"
+                  >
+                    {field.action.label}
+                  </button>
+                ) : null}
+              </div>
               {field.type === "select" ? (
                 /* Radix forbids empty SelectItem values, so "" options are mapped to a sentinel. */
                 <Select

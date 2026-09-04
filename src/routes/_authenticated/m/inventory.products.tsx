@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,19 +19,34 @@ export const Route = createFileRoute("/_authenticated/m/inventory/products")({ c
 
 
 function ProductsPage() {
-  const { products, categories, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
+  const { products, categories, purchases, purchaseItems, saveProduct, saveCategory, deleteProduct, metrics } = useInventory();
   const business = useBusinessProfile();
   const [editing, setEditing] = useState<ProductRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [formSeed, setFormSeed] = useState<Record<string, FieldValue> | null>(null);
+  const [categoryFormOpen, setCategoryFormOpen] = useState(false);
+  const [justAddedCategories, setJustAddedCategories] = useState<string[]>([]);
+  const liveValues = useRef<Record<string, FieldValue>>({});
   const [photo, setPhoto] = useState("");
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<ProductRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProductRecord | null>(null);
 
-  const categoryNames = categories.map((row) => row.name);
+  const categoryNames = Array.from(new Set([...categories.map((row) => row.name), ...justAddedCategories]));
 
-  const openCreate = () => { setEditing(null); setPhoto(""); setFormOpen(true); };
-  const openEdit = (row: ProductRecord) => { setEditing(row); setPhoto(""); setFormOpen(true); };
+  const openCreate = () => { setEditing(null); setPhoto(""); setFormSeed({ reorderLevel: 5, stockQuantity: 0, costPrice: 0 }); setFormOpen(true); };
+  const openEdit = (row: ProductRecord) => {
+    setEditing(row);
+    setPhoto("");
+    setFormSeed({
+      name: row.name,
+      category: row.category || (categoryNames[0] ?? ""),
+      sellingPrice: row.sellingPrice,
+      reorderLevel: row.reorderLevel,
+      description: row.description,
+    });
+    setFormOpen(true);
+  };
 
 
   /** Purchase history for a product — this is where supplier and historical cost live. */
@@ -163,23 +178,21 @@ function ProductsPage() {
         title={editing ? "Edit product" : "New product"}
         description="The master record of what you buy and sell. Suppliers and purchase costs are recorded on purchases, not here."
         submitLabel={editing ? "Update" : "Create"}
-        initialValue={
-          editing
-            ? {
-                name: editing.name,
-                category: editing.category || (categoryNames[0] ?? ""),
-                sellingPrice: editing.sellingPrice,
-                reorderLevel: editing.reorderLevel,
-                description: editing.description,
-              }
-            : { reorderLevel: 5, stockQuantity: 0, costPrice: 0 }
-        }
+        initialValue={formSeed}
         onClose={() => setFormOpen(false)}
+        onChange={(values) => { liveValues.current = values; }}
         onSubmit={submit}
         blockSubmit={!editing && !photo ? "Add a product photo — every new product needs one." : null}
         fields={[
           { name: "name", label: "Product name", type: "text", required: true, half: true },
-          { name: "category", label: "Category", type: "select", options: categoryNames.length ? categoryNames : ["Uncategorised"], half: true },
+          {
+            name: "category",
+            label: "Category",
+            type: "select",
+            options: categoryNames.length ? categoryNames : ["Uncategorised"],
+            half: true,
+            action: { label: "+ New category", onClick: () => setCategoryFormOpen(true) },
+          },
           { name: "sellingPrice", label: "Selling price (current)", type: "number", required: true, half: true },
           { name: "reorderLevel", label: "Reorder level", type: "number", half: true },
           ...(editing
@@ -210,6 +223,27 @@ function ProductsPage() {
           </div>
         }
 
+      />
+
+      <RecordDialog
+        open={categoryFormOpen}
+        title="New category"
+        description="Add the category now and continue with this product."
+        submitLabel="Add category"
+        initialValue={null}
+        onClose={() => setCategoryFormOpen(false)}
+        onSubmit={(value) => {
+          const name = str(value.name).trim();
+          if (!name) return;
+          saveCategory({ name, description: str(value.description) });
+          setJustAddedCategories((current) => [name, ...current]);
+          setFormSeed({ ...liveValues.current, category: name });
+          toast.success(`${name} added — selected on this product`);
+        }}
+        fields={[
+          { name: "name", label: "Category name", type: "text", required: true, half: true },
+          { name: "description", label: "Description", type: "text", half: true },
+        ]}
       />
 
       <DetailsDrawer

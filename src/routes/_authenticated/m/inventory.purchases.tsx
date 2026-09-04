@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShoppingBag, Plus, CreditCard, PackageCheck, RotateCcw, Receipt } from "lucide-react";
 import { toast } from "sonner";
@@ -21,11 +21,15 @@ const today = () => new Date().toISOString().slice(0, 10);
 const purchaseNo = () => `PUR-${Date.now().toString().slice(-6)}`;
 
 function PurchasesPage() {
-  const { purchases, purchaseItems, products, suppliers, savePurchase, deletePurchase, receivePurchase, returnPurchase, movements } =
+  const { purchases, purchaseItems, products, suppliers, saveSupplier, savePurchase, deletePurchase, receivePurchase, returnPurchase, movements } =
     useInventory();
 
   const [editing, setEditing] = useState<InventoryPurchaseRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [formSeed, setFormSeed] = useState<Record<string, FieldValue> | null>(null);
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [justAddedSuppliers, setJustAddedSuppliers] = useState<string[]>([]);
+  const liveValues = useRef<Record<string, FieldValue>>({});
   const [lines, setLines] = useState<PurchaseLine[]>([]);
   const [detail, setDetail] = useState<InventoryPurchaseRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<InventoryPurchaseRecord | null>(null);
@@ -48,9 +52,12 @@ function PurchasesPage() {
     .filter((row) => row.status === "Received")
     .reduce((sum, row) => sum + itemsOf(row).reduce((qty, item) => qty + item.quantity, 0), 0);
 
+  const supplierOptions = Array.from(new Set([...suppliers.map((row) => row.name), ...justAddedSuppliers]));
+
   const openCreate = () => {
     setEditing(null);
     setLines([]);
+    setFormSeed({ purchaseDate: today(), status: "Pending" });
     setFormOpen(true);
   };
 
@@ -65,6 +72,12 @@ function PurchasesPage() {
         lineTotal: item.lineTotal,
       })),
     );
+    setFormSeed({
+      supplier: row.supplierName,
+      purchaseDate: row.purchaseDate,
+      status: row.status,
+      notes: row.notes,
+    });
     setFormOpen(true);
   };
 
@@ -191,20 +204,19 @@ function PurchasesPage() {
         title={editing ? `Edit ${editing.purchaseNo}` : "New purchase"}
         description="Header = supplier, date and status. Items = the products actually bought. The total comes from the items."
         submitLabel={editing ? "Update" : "Create"}
-        initialValue={
-          editing
-            ? {
-                supplier: editing.supplierName,
-                purchaseDate: editing.purchaseDate,
-                status: editing.status,
-                notes: editing.notes,
-              }
-            : { purchaseDate: today(), status: "Pending" }
-        }
+        initialValue={formSeed}
         onClose={() => setFormOpen(false)}
+        onChange={(values) => { liveValues.current = values; }}
         onSubmit={submit}
         fields={[
-          { name: "supplier", label: "Supplier", type: "select", options: suppliers.length ? suppliers.map((row) => row.name) : ["—"], half: true },
+          {
+            name: "supplier",
+            label: "Supplier",
+            type: "select",
+            options: supplierOptions.length ? supplierOptions : ["—"],
+            half: true,
+            action: { label: "+ New supplier", onClick: () => setSupplierFormOpen(true) },
+          },
           { name: "purchaseDate", label: "Purchase date", type: "date", required: true, half: true },
           { name: "status", label: "Status", type: "select", options: ["Pending", "Cancelled"], half: true },
           { name: "notes", label: "Notes / reference", type: "text" },
@@ -219,6 +231,35 @@ function PurchasesPage() {
             </p>
           </div>
         }
+      />
+
+      <RecordDialog
+        open={supplierFormOpen}
+        title="New supplier"
+        description="Add the supplier now and continue with this purchase."
+        submitLabel="Add supplier"
+        initialValue={{ status: "Active" }}
+        onClose={() => setSupplierFormOpen(false)}
+        onSubmit={(value) => {
+          const name = str(value.name).trim();
+          if (!name) return;
+          saveSupplier({
+            name,
+            phone: str(value.phone),
+            address: str(value.address),
+            notes: "",
+            status: (str(value.status) || "Active") as "Active" | "Inactive",
+          });
+          setJustAddedSuppliers((current) => [name, ...current]);
+          setFormSeed({ ...liveValues.current, supplier: name });
+          toast.success(`${name} added — selected on this purchase`);
+        }}
+        fields={[
+          { name: "name", label: "Supplier name", type: "text", required: true, half: true },
+          { name: "phone", label: "Phone", type: "text", half: true },
+          { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"], half: true },
+          { name: "address", label: "Address", type: "text" },
+        ]}
       />
 
       <DetailsDrawer
