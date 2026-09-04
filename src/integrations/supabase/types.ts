@@ -1676,6 +1676,7 @@ export type Database = {
         Row: {
           activities: string[]
           annual_turnover: number | null
+          business_address: string | null
           business_name: string | null
           business_type: string | null
           created_at: string
@@ -1686,6 +1687,7 @@ export type Database = {
           id: string
           last_seen_at: string | null
           legal_form: string | null
+          logo_path: string | null
           phone: string | null
           region: string | null
           sector: string | null
@@ -1697,6 +1699,7 @@ export type Database = {
         Insert: {
           activities?: string[]
           annual_turnover?: number | null
+          business_address?: string | null
           business_name?: string | null
           business_type?: string | null
           created_at?: string
@@ -1707,6 +1710,7 @@ export type Database = {
           id: string
           last_seen_at?: string | null
           legal_form?: string | null
+          logo_path?: string | null
           phone?: string | null
           region?: string | null
           sector?: string | null
@@ -1718,6 +1722,7 @@ export type Database = {
         Update: {
           activities?: string[]
           annual_turnover?: number | null
+          business_address?: string | null
           business_name?: string | null
           business_type?: string | null
           created_at?: string
@@ -1728,6 +1733,7 @@ export type Database = {
           id?: string
           last_seen_at?: string | null
           legal_form?: string | null
+          logo_path?: string | null
           phone?: string | null
           region?: string | null
           sector?: string | null
