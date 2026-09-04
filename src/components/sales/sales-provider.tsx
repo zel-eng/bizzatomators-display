@@ -256,6 +256,7 @@ type ContextValue = {
   payments: PaymentRecord[];
   metrics: SalesMetrics;
   refresh: () => Promise<void>;
+  saveCustomer: (record: { name: string; phone?: string; address?: string }) => Promise<string | null>;
   saveSale: (record: Omit<SaleRecord, "id">, items: LineItem[], id?: string) => Promise<string | null>;
   deleteSale: (id: string) => Promise<void>;
   completeDraft: (id: string) => Promise<void>;
@@ -409,6 +410,20 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       );
     },
     [],
+  );
+
+  /** Quick-create a customer from a sales form, without leaving the form. */
+  const saveCustomer = useCallback(
+    async (record: { name: string; phone?: string; address?: string }) => {
+      const { data } = await supabase
+        .from("customers")
+        .insert({ name: record.name, phone: record.phone || null, address: record.address || null } as any)
+        .select("id")
+        .single();
+      await refresh();
+      return (data as any)?.id ?? null;
+    },
+    [refresh],
   );
 
   const saveSale = useCallback(
@@ -807,6 +822,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     payments,
     metrics,
     refresh,
+    saveCustomer,
     saveSale,
     deleteSale,
     completeDraft,
