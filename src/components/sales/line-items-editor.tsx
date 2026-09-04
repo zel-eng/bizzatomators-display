@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Minus, Plus, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { buildLine, formatMoney, type LineItem, type SalesProduct } from "@/components/sales/sales-provider";
+import { ProductThumb } from "@/components/inventory/product-image";
 
 /** Human readable specification line for a product, sourced from Inventory. */
 export function productSpec(product: Pick<SalesProduct, "category" | "sku" | "description">) {
