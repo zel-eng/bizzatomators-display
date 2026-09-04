@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ShoppingCart, FileDown } from "lucide-react";
+import { ShoppingCart, FileDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { TaxWorkspace } from "@/components/tax/tax-workspace";
+import { RecordDialog, str } from "@/components/tax/record-dialog";
 import { LineItemsEditor, productSpec } from "@/components/sales/line-items-editor";
 import { docNumber, formatMoney, lineTotals, useSales, type LineItem } from "@/components/sales/sales-provider";
 import { useBusinessProfile } from "@/hooks/use-business-profile";
@@ -20,7 +21,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 function NewSalePage() {
   const navigate = useNavigate();
   const business = useBusinessProfile();
-  const { products, customers, saveSale, saveQuotation } = useSales();
+  const { products, customers, saveSale, saveQuotation, saveCustomer } = useSales();
 
   const [items, setItems] = useState<LineItem[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -30,6 +31,7 @@ function NewSalePage() {
   const [amountPaid, setAmountPaid] = useState(0);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [customerFormOpen, setCustomerFormOpen] = useState(false);
 
   const customer = customers.find((row) => row.id === customerId);
   const customerName = customer?.name ?? "Walk-in customer";
@@ -145,7 +147,16 @@ function NewSalePage() {
       <section className="rounded-3xl border border-white/15 bg-white/[0.06] p-4 backdrop-blur-xl">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <Label className="text-xs uppercase tracking-[0.14em] text-white/55">Customer</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs uppercase tracking-[0.14em] text-white/55">Customer</Label>
+              <button
+                type="button"
+                onClick={() => setCustomerFormOpen(true)}
+                className="flex items-center gap-1 rounded-lg border border-amber-300/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200 hover:bg-amber-400/20"
+              >
+                <UserPlus className="h-3 w-3" /> New customer
+              </button>
+            </div>
             <Select value={customerId || "walk-in"} onValueChange={(value) => setCustomerId(value === "walk-in" ? "" : value)}>
               <SelectTrigger className="mt-1 border-white/15 bg-black/25 text-white"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -216,6 +227,28 @@ function NewSalePage() {
         </div>
         <p className="mt-3 text-xs text-white/45">Completed sales reduce Inventory stock. Drafts and quotations do not touch stock.</p>
       </section>
+
+      <RecordDialog
+        open={customerFormOpen}
+        title="New customer"
+        description="Add the customer now and continue with this sale."
+        submitLabel="Add customer"
+        initialValue={null}
+        onClose={() => setCustomerFormOpen(false)}
+        onSubmit={(value) => {
+          const name = str(value.name).trim();
+          if (!name) return;
+          void saveCustomer({ name, phone: str(value.phone), address: str(value.address) }).then((id) => {
+            if (id) setCustomerId(id);
+            toast.success(`${name} added — selected on this sale`);
+          });
+        }}
+        fields={[
+          { name: "name", label: "Customer name", type: "text", required: true, half: true },
+          { name: "phone", label: "Phone", type: "text", half: true },
+          { name: "address", label: "Address", type: "text" },
+        ]}
+      />
     </TaxWorkspace>
   );
 }
