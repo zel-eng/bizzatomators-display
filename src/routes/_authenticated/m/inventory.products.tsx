@@ -46,38 +46,49 @@ function ProductsPage() {
     return names.length ? names.join(", ") : "—";
   };
 
+  /**
+   * Photo + name identify the product. The SKU is generated here on save and is
+   * never typed by the user; barcodes are kept only for products that already had one.
+   */
   const submit = (value: Record<string, FieldValue>) => {
-    const categoryName = str(value.category);
-    const sku = str(value.sku).trim();
-    const barcode = str(value.barcode).trim();
-    const clash = products.find(
-      (row) =>
-        row.id !== editing?.id &&
-        ((sku && row.sku.toLowerCase() === sku.toLowerCase()) || (barcode && row.barcode.toLowerCase() === barcode.toLowerCase())),
-    );
-    if (clash) { toast.error(`SKU or barcode already used by ${clash.name}`); return; }
+    if (saving) return;
+    setSaving(true);
+    void (async () => {
+      try {
+        const categoryName = str(value.category);
+        const name = str(value.name);
+        const imagePath = photo ? await uploadProductImage(photo) : editing?.imagePath;
+        const sku = editing?.sku || generateSku(business.name, name, products.map((row) => row.sku));
 
-    saveProduct(
-      {
-        name: str(value.name),
-        sku,
-        barcode,
-        category: categoryName,
-        categoryId: categories.find((row) => row.name === categoryName)?.id ?? "",
-        // Suppliers belong to purchases, not to the product master record.
-        supplierId: editing?.supplierId ?? "",
-        warehouseId: editing?.warehouseId ?? "",
-        sellingPrice: num(value.sellingPrice),
-        costPrice: editing ? editing.costPrice : num(value.costPrice),
-        stockQuantity: editing?.stockQuantity ?? num(value.stockQuantity),
-        reorderLevel: num(value.reorderLevel),
-        active: editing?.active ?? true,
-        description: str(value.description),
-      },
-      editing?.id,
-    );
-    toast.success(editing ? "Product updated" : "Product added");
+        saveProduct(
+          {
+            name,
+            sku,
+            barcode: editing?.barcode ?? "",
+            category: categoryName,
+            categoryId: categories.find((row) => row.name === categoryName)?.id ?? "",
+            // Suppliers belong to purchases, not to the product master record.
+            supplierId: editing?.supplierId ?? "",
+            warehouseId: editing?.warehouseId ?? "",
+            sellingPrice: num(value.sellingPrice),
+            costPrice: editing ? editing.costPrice : num(value.costPrice),
+            stockQuantity: editing?.stockQuantity ?? num(value.stockQuantity),
+            reorderLevel: num(value.reorderLevel),
+            active: editing?.active ?? true,
+            description: str(value.description),
+            imagePath: imagePath ?? "",
+          },
+          editing?.id,
+        );
+        toast.success(editing ? "Product updated" : `Product added · SKU ${sku}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not save the product photo");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
+
 
 
 
