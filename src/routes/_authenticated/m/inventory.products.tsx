@@ -1,37 +1,38 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useInventory, formatMoney, stockStatus, type ProductRecord } from "@/components/inventory/inventory-provider";
 import { RecordDialog, ConfirmDialog, num, str, type FieldValue } from "@/components/tax/record-dialog";
 import { DetailsDrawer, StatusBadge, SummaryStrip, TaxTable, TaxWorkspace, exportCsv } from "@/components/tax/tax-workspace";
-import { supabase } from "@/integrations/supabase/client";
+import { ProductImagePicker, ProductThumb, uploadProductImage, useProductImageUrl, productPlaceholder } from "@/components/inventory/product-image";
+import { useBusinessProfile } from "@/hooks/use-business-profile";
+import { generateSku } from "@/lib/product-sku";
 
 function ProductPhoto({ path }: { path?: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!path) { setUrl(null); return; }
-    void supabase.storage.from("product-images").createSignedUrl(path, 60 * 60).then(({ data }) => setUrl(data?.signedUrl ?? null));
-  }, [path]);
-  if (!path) return <span className="text-white/50">No photo — use Scan on mobile</span>;
-  if (!url) return <span className="text-white/50">Loading…</span>;
-  return <img src={url} alt="Product photo" className="max-h-28 rounded-xl object-contain" />;
+  const url = useProductImageUrl(path);
+  return <img src={url ?? productPlaceholder} alt="Product photo" className="max-h-28 rounded-xl object-contain" />;
 }
 
 export const Route = createFileRoute("/_authenticated/m/inventory/products")({ component: ProductsPage });
 
+
 function ProductsPage() {
   const { products, categories, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
+  const business = useBusinessProfile();
   const [editing, setEditing] = useState<ProductRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [photo, setPhoto] = useState("");
+  const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<ProductRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProductRecord | null>(null);
 
   const categoryNames = categories.map((row) => row.name);
 
-  const openCreate = () => { setEditing(null); setFormOpen(true); };
-  const openEdit = (row: ProductRecord) => { setEditing(row); setFormOpen(true); };
+  const openCreate = () => { setEditing(null); setPhoto(""); setFormOpen(true); };
+  const openEdit = (row: ProductRecord) => { setEditing(row); setPhoto(""); setFormOpen(true); };
+
 
   /** Purchase history for a product — this is where supplier and historical cost live. */
   const historyOf = (product: ProductRecord) =>
@@ -45,38 +46,49 @@ function ProductsPage() {
     return names.length ? names.join(", ") : "—";
   };
 
+  /**
+   * Photo + name identify the product. The SKU is generated here on save and is
+   * never typed by the user; barcodes are kept only for products that already had one.
+   */
   const submit = (value: Record<string, FieldValue>) => {
-    const categoryName = str(value.category);
-    const sku = str(value.sku).trim();
-    const barcode = str(value.barcode).trim();
-    const clash = products.find(
-      (row) =>
-        row.id !== editing?.id &&
-        ((sku && row.sku.toLowerCase() === sku.toLowerCase()) || (barcode && row.barcode.toLowerCase() === barcode.toLowerCase())),
-    );
-    if (clash) { toast.error(`SKU or barcode already used by ${clash.name}`); return; }
+    if (saving) return;
+    setSaving(true);
+    void (async () => {
+      try {
+        const categoryName = str(value.category);
+        const name = str(value.name);
+        const imagePath = photo ? await uploadProductImage(photo) : editing?.imagePath;
+        const sku = editing?.sku || generateSku(business.name, name, products.map((row) => row.sku));
 
-    saveProduct(
-      {
-        name: str(value.name),
-        sku,
-        barcode,
-        category: categoryName,
-        categoryId: categories.find((row) => row.name === categoryName)?.id ?? "",
-        // Suppliers belong to purchases, not to the product master record.
-        supplierId: editing?.supplierId ?? "",
-        warehouseId: editing?.warehouseId ?? "",
-        sellingPrice: num(value.sellingPrice),
-        costPrice: editing ? editing.costPrice : num(value.costPrice),
-        stockQuantity: editing?.stockQuantity ?? num(value.stockQuantity),
-        reorderLevel: num(value.reorderLevel),
-        active: editing?.active ?? true,
-        description: str(value.description),
-      },
-      editing?.id,
-    );
-    toast.success(editing ? "Product updated" : "Product added");
+        saveProduct(
+          {
+            name,
+            sku,
+            barcode: editing?.barcode ?? "",
+            category: categoryName,
+            categoryId: categories.find((row) => row.name === categoryName)?.id ?? "",
+            // Suppliers belong to purchases, not to the product master record.
+            supplierId: editing?.supplierId ?? "",
+            warehouseId: editing?.warehouseId ?? "",
+            sellingPrice: num(value.sellingPrice),
+            costPrice: editing ? editing.costPrice : num(value.costPrice),
+            stockQuantity: editing?.stockQuantity ?? num(value.stockQuantity),
+            reorderLevel: num(value.reorderLevel),
+            active: editing?.active ?? true,
+            description: str(value.description),
+            imagePath: imagePath ?? "",
+          },
+          editing?.id,
+        );
+        toast.success(editing ? "Product updated" : `Product added · SKU ${sku}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not save the product photo");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
+
 
 
 
@@ -115,12 +127,22 @@ function ProductsPage() {
           match: (row, value) => (value === "Archived" ? !row.active : row.active && stockStatus(row) === value),
         }}
         columns={[
-          { key: "name", label: "Product", render: (row) => <span className="font-medium text-white">{row.name}{row.active ? "" : " (archived)"}</span> },
+          {
+            key: "name",
+            label: "Product",
+            render: (row) => (
+              <span className="flex items-center gap-2">
+                <ProductThumb path={row.imagePath} alt={row.name} className="h-9 w-9 shrink-0 rounded-lg border border-white/10" />
+                <span className="font-medium text-white">{row.name}{row.active ? "" : " (archived)"}</span>
+              </span>
+            ),
+          },
           { key: "sku", label: "SKU", hideOnMobile: true, render: (row) => row.sku || "—" },
           { key: "category", label: "Category", hideOnMobile: true, render: (row) => row.category || "—" },
           { key: "sellingPrice", label: "Selling price", render: (row) => formatMoney(row.sellingPrice) },
           { key: "stockQuantity", label: "Stock", render: (row) => String(row.stockQuantity) },
         ]}
+
         onRowClick={setDetail}
         onEdit={openEdit}
         onDelete={setPendingDelete}
@@ -145,8 +167,6 @@ function ProductsPage() {
           editing
             ? {
                 name: editing.name,
-                sku: editing.sku,
-                barcode: editing.barcode,
                 category: editing.category || (categoryNames[0] ?? ""),
                 sellingPrice: editing.sellingPrice,
                 reorderLevel: editing.reorderLevel,
@@ -156,11 +176,10 @@ function ProductsPage() {
         }
         onClose={() => setFormOpen(false)}
         onSubmit={submit}
+        blockSubmit={!editing && !photo ? "Add a product photo — every new product needs one." : null}
         fields={[
           { name: "name", label: "Product name", type: "text", required: true, half: true },
           { name: "category", label: "Category", type: "select", options: categoryNames.length ? categoryNames : ["Uncategorised"], half: true },
-          { name: "sku", label: "SKU", type: "text", half: true },
-          { name: "barcode", label: "Barcode", type: "text", half: true },
           { name: "sellingPrice", label: "Selling price (current)", type: "number", required: true, half: true },
           { name: "reorderLevel", label: "Reorder level", type: "number", half: true },
           ...(editing
@@ -172,12 +191,25 @@ function ProductsPage() {
           { name: "description", label: "Description", type: "text" },
         ]}
         extra={
-          <p className="text-[11px] text-white/45">
-            {editing
-              ? "Inventory cost is maintained automatically from received purchases. Changing the selling price never changes past sales."
-              : "Leave opening stock at 0 if you have no goods yet — stock arrives when you receive a purchase."}
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-white/80">Product photo {editing ? "" : "(required)"}</p>
+            <ProductImagePicker
+              value={photo}
+              existingPath={editing?.imagePath}
+              onChange={setPhoto}
+              invalid={!editing && !photo}
+            />
+            <p className="text-[11px] text-white/45">
+              A product is identified by its photo and name. The product code (SKU) is created automatically when you save.
+            </p>
+            <p className="text-[11px] text-white/45">
+              {editing
+                ? "Inventory cost is maintained automatically from received purchases. Changing the selling price never changes past sales."
+                : "Leave opening stock at 0 if you have no goods yet — stock arrives when you receive a purchase."}
+            </p>
+          </div>
         }
+
       />
 
       <DetailsDrawer

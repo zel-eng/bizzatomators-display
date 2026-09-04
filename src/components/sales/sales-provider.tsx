@@ -16,6 +16,7 @@ export type SalesProduct = {
   sellingPrice: number;
   taxRate: number;
   stockQuantity: number;
+  imagePath?: string;
 };
 
 export type SalesCustomer = {
@@ -160,6 +161,7 @@ export const docNumber = (prefix: string) => `${prefix}-${Date.now().toString().
 const mapProduct = (r: any): SalesProduct => ({
   id: r.id, name: str(r.name), sku: str(r.sku), category: str(r.category), description: str(r.description),
   sellingPrice: num(r.selling_price), taxRate: num(r.tax_rate), stockQuantity: num(r.stock_quantity),
+  imagePath: str(r.image_path),
 });
 
 const mapCustomer = (r: any): SalesCustomer => ({
