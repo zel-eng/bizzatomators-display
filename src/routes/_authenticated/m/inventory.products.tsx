@@ -127,12 +127,22 @@ function ProductsPage() {
           match: (row, value) => (value === "Archived" ? !row.active : row.active && stockStatus(row) === value),
         }}
         columns={[
-          { key: "name", label: "Product", render: (row) => <span className="font-medium text-white">{row.name}{row.active ? "" : " (archived)"}</span> },
+          {
+            key: "name",
+            label: "Product",
+            render: (row) => (
+              <span className="flex items-center gap-2">
+                <ProductThumb path={row.imagePath} alt={row.name} className="h-9 w-9 shrink-0 rounded-lg border border-white/10" />
+                <span className="font-medium text-white">{row.name}{row.active ? "" : " (archived)"}</span>
+              </span>
+            ),
+          },
           { key: "sku", label: "SKU", hideOnMobile: true, render: (row) => row.sku || "—" },
           { key: "category", label: "Category", hideOnMobile: true, render: (row) => row.category || "—" },
           { key: "sellingPrice", label: "Selling price", render: (row) => formatMoney(row.sellingPrice) },
           { key: "stockQuantity", label: "Stock", render: (row) => String(row.stockQuantity) },
         ]}
+
         onRowClick={setDetail}
         onEdit={openEdit}
         onDelete={setPendingDelete}
