@@ -20,15 +20,19 @@ export const Route = createFileRoute("/_authenticated/m/inventory/products")({ c
 
 function ProductsPage() {
   const { products, categories, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
+  const business = useBusinessProfile();
   const [editing, setEditing] = useState<ProductRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [photo, setPhoto] = useState("");
+  const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<ProductRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProductRecord | null>(null);
 
   const categoryNames = categories.map((row) => row.name);
 
-  const openCreate = () => { setEditing(null); setFormOpen(true); };
-  const openEdit = (row: ProductRecord) => { setEditing(row); setFormOpen(true); };
+  const openCreate = () => { setEditing(null); setPhoto(""); setFormOpen(true); };
+  const openEdit = (row: ProductRecord) => { setEditing(row); setPhoto(""); setFormOpen(true); };
+
 
   /** Purchase history for a product — this is where supplier and historical cost live. */
   const historyOf = (product: ProductRecord) =>
