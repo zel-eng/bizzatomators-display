@@ -1,187 +1,356 @@
 import jsPDF from "jspdf";
 
-const MARGIN = 40;
-const AMBER = [217, 160, 40] as const;
-const DARK = [24, 26, 32] as const;
+/**
+ * One premium document template shared by quotations, draft quotations and
+ * invoices. Preview and export both render through this single engine, so what
+ * the user sees is exactly what gets exported.
+ */
+
+const MARGIN = 42;
+const NEUTRAL: RGB = [32, 38, 52];
+const MUTED: RGB = [122, 130, 145];
+const LINE: RGB = [226, 229, 236];
+
+type RGB = [number, number, number];
 
 export type PdfLine = {
   name: string;
   spec?: string;
+  description?: string;
   quantity: number;
   unitPrice: number;
+  discount?: number;
   lineTotal: number;
+  /** Optional embedded product photo (data URL). */
+  imageDataUrl?: string | null;
 };
 
 export type PdfDocument = {
-  kind: "INVOICE" | "QUOTATION";
+  kind: "INVOICE" | "QUOTATION" | "DRAFT QUOTATION";
   number: string;
   date: string;
   secondaryLabel?: string;
   secondaryValue?: string;
-  business: { name: string; address?: string; phone?: string };
-  customer: { name: string; phone?: string; address?: string };
+  /** e.g. PAID / PARTIALLY PAID / UNPAID / OVERDUE / DRAFT */
+  statusLabel?: string;
+  business: {
+    name: string;
+    address?: string;
+    phone?: string;
+    registration?: string;
+    logoDataUrl?: string | null;
+    accent?: RGB | null;
+  };
+  customer: { name: string; phone?: string; address?: string; email?: string };
   lines: PdfLine[];
   subtotal: number;
-  taxAmount: number;
+  taxAmount?: number;
+  /** Invoices never present tax; quotations may. */
+  showTax?: boolean;
   discountAmount: number;
+  otherCharges?: number;
   total: number;
   amountPaid?: number;
+  paymentTerms?: string;
+  deliveryTerms?: string;
+  validityNote?: string;
+  bankDetails?: string;
   notes?: string;
+  terms?: string;
   footer?: string;
 };
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-TZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(value || 0));
 
-/** Build a clean, modern invoice / quotation PDF and download it. */
-export function buildSalesDocumentPdf(data: PdfDocument, fileName: string) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
+const imageFormat = (dataUrl: string) => (dataUrl.includes("image/png") ? "PNG" : "JPEG");
+
+/** Builds the document; returns the jsPDF instance so callers can save or preview it. */
+export function renderSalesDocument(data: PdfDocument): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const right = pageWidth - MARGIN;
+  const accent: RGB = data.business.accent ?? [190, 140, 40];
+  const isDraft = data.kind === "DRAFT QUOTATION";
 
-  /* header band */
-  doc.setFillColor(DARK[0], DARK[1], DARK[2]);
-  doc.rect(0, 0, pageWidth, 110, "F");
-  doc.setFillColor(AMBER[0], AMBER[1], AMBER[2]);
-  doc.rect(0, 110, pageWidth, 4, "F");
+  const setColor = (c: RGB) => doc.setTextColor(c[0], c[1], c[2]);
+  const fill = (c: RGB) => doc.setFillColor(c[0], c[1], c[2]);
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(data.business.name || "Business", MARGIN, 52);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  const bizLines = [data.business.address, data.business.phone].filter(Boolean) as string[];
-  bizLines.forEach((line, index) => doc.text(line, MARGIN, 70 + index * 12));
+  /* ---------- reusable chrome ---------- */
+  const drawHeader = (compact: boolean) => {
+    let cursor = MARGIN;
+    const logo = data.business.logoDataUrl;
+    let textX = MARGIN;
+    if (logo) {
+      try {
+        doc.addImage(logo, imageFormat(logo), MARGIN, cursor - 4, 52, 52, undefined, "FAST");
+        textX = MARGIN + 66;
+      } catch {
+        textX = MARGIN;
+      }
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(compact ? 13 : 16);
+    setColor(NEUTRAL);
+    doc.text(data.business.name || "Business", textX, cursor + 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    setColor(MUTED);
+    const bizLines = [data.business.address, data.business.phone, data.business.registration].filter(Boolean) as string[];
+    bizLines.slice(0, compact ? 1 : 3).forEach((line, index) => doc.text(line, textX, cursor + 28 + index * 11));
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(24);
-  doc.setTextColor(AMBER[0], AMBER[1], AMBER[2]);
-  doc.text(data.kind, right, 52, { align: "right" });
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "normal");
-  doc.text(`No. ${data.number}`, right, 70, { align: "right" });
-  doc.text(`Date: ${data.date}`, right, 84, { align: "right" });
-  if (data.secondaryLabel && data.secondaryValue) {
-    doc.text(`${data.secondaryLabel}: ${data.secondaryValue}`, right, 98, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(compact ? 13 : 19);
+    setColor(accent);
+    doc.text(data.kind, right, cursor + 14, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    setColor(MUTED);
+    const meta = [
+      `No. ${data.number}`,
+      `Date: ${data.date}`,
+      ...(data.secondaryLabel && data.secondaryValue ? [`${data.secondaryLabel}: ${data.secondaryValue}`] : []),
+    ];
+    meta.slice(0, compact ? 1 : 3).forEach((line, index) => doc.text(line, right, cursor + 30 + index * 12, { align: "right" }));
+
+    cursor += compact ? 44 : Math.max(66, 30 + Math.max(bizLines.length, meta.length) * 12);
+    fill(accent);
+    doc.rect(MARGIN, cursor, pageWidth - MARGIN * 2, 2.4, "F");
+    return cursor + (compact ? 18 : 24);
+  };
+
+  const drawFooter = () => {
+    const pages = doc.getNumberOfPages();
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page);
+      doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+      doc.line(MARGIN, pageHeight - 46, right, pageHeight - 46);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      setColor(MUTED);
+      const contact = [data.business.name, data.business.phone, data.business.address].filter(Boolean).join("  ·  ");
+      doc.text(contact, MARGIN, pageHeight - 32);
+      doc.text(`Page ${page} of ${pages}`, right, pageHeight - 32, { align: "right" });
+      const note =
+        data.footer ??
+        (data.kind === "INVOICE" ? "Thank you for your business." : "This offer is valid until the date shown above.");
+      doc.text(note, MARGIN, pageHeight - 21);
+    }
+  };
+
+  const drawWatermark = () => {
+    if (!isDraft) return;
+    const pages = doc.getNumberOfPages();
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(78);
+      doc.setTextColor(238, 240, 245);
+      doc.text("DRAFT", pageWidth / 2, pageHeight / 2, { align: "center", angle: 28 });
+    }
+  };
+
+  let y = drawHeader(false);
+
+  const newPage = () => {
+    doc.addPage();
+    y = drawHeader(true);
+  };
+
+  const ensure = (needed: number) => {
+    if (y + needed > pageHeight - 70) newPage();
+  };
+
+  /* ---------- status pill ---------- */
+  if (data.statusLabel) {
+    const label = data.statusLabel.toUpperCase();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    const width = doc.getTextWidth(label) + 20;
+    fill(accent);
+    doc.roundedRect(right - width, y - 4, width, 18, 9, 9, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.text(label, right - width / 2, y + 8, { align: "center" });
+    y += 22;
   }
 
-  /* customer block */
-  let y = 150;
-  doc.setTextColor(120, 120, 130);
-  doc.setFontSize(8);
-  doc.text(data.kind === "INVOICE" ? "BILL TO" : "PREPARED FOR", MARGIN, y);
-  doc.setTextColor(30, 30, 35);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text(data.customer.name || "Walk-in customer", MARGIN, y + 16);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(90, 90, 100);
-  const custLines = [data.customer.phone, data.customer.address].filter(Boolean) as string[];
-  custLines.forEach((line, index) => doc.text(line, MARGIN, y + 32 + index * 12));
-
-  y = y + 44 + custLines.length * 12;
-
-  /* table head */
-  const colQty = right - 210;
-  const colPrice = right - 130;
-  const colTotal = right;
-
-  doc.setFillColor(245, 245, 247);
-  doc.rect(MARGIN, y, pageWidth - MARGIN * 2, 24, "F");
-  doc.setFontSize(8);
-  doc.setTextColor(110, 110, 120);
-  doc.text("ITEM", MARGIN + 8, y + 16);
-  doc.text("QTY", colQty, y + 16, { align: "right" });
-  doc.text("PRICE", colPrice, y + 16, { align: "right" });
-  doc.text("TOTAL", colTotal - 8, y + 16, { align: "right" });
-  y += 24;
-
-  /* rows */
-  doc.setTextColor(35, 35, 40);
-  data.lines.forEach((line) => {
-    if (y > pageHeight - 200) {
-      doc.addPage();
-      y = MARGIN;
-    }
-    const specLines = line.spec ? doc.splitTextToSize(line.spec, colQty - MARGIN - 30) : [];
-    const rowHeight = 22 + specLines.length * 11;
+  /* ---------- parties ---------- */
+  const colWidth = (pageWidth - MARGIN * 2 - 24) / 2;
+  const partyBlock = (x: number, heading: string, lines: string[]) => {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(doc.splitTextToSize(line.name, colQty - MARGIN - 30)[0] ?? line.name, MARGIN + 8, y + 15);
+    doc.setFontSize(7.5);
+    setColor(MUTED);
+    doc.text(heading, x, y);
+    doc.setFontSize(11);
+    setColor(NEUTRAL);
+    doc.text(lines[0] || "—", x, y + 16);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(String(line.quantity), colQty, y + 15, { align: "right" });
-    doc.text(money(line.unitPrice), colPrice, y + 15, { align: "right" });
-    doc.text(money(line.lineTotal), colTotal - 8, y + 15, { align: "right" });
-    if (specLines.length > 0) {
-      doc.setFontSize(8);
-      doc.setTextColor(120, 120, 130);
-      specLines.forEach((spec: string, index: number) => doc.text(spec, MARGIN + 8, y + 27 + index * 11));
-      doc.setTextColor(35, 35, 40);
+    doc.setFontSize(8.5);
+    setColor(MUTED);
+    lines.slice(1).forEach((line, index) => doc.text(doc.splitTextToSize(line, colWidth)[0], x, y + 30 + index * 11));
+  };
+
+  const customerLines = [
+    data.customer.name || "Walk-in customer",
+    ...([data.customer.address, data.customer.phone, data.customer.email].filter(Boolean) as string[]),
+  ];
+  const fromLines = [
+    data.business.name,
+    ...([data.business.address, data.business.phone, data.business.registration].filter(Boolean) as string[]),
+  ];
+  partyBlock(MARGIN, data.kind === "INVOICE" ? "BILL TO" : "PREPARED FOR", customerLines);
+  partyBlock(MARGIN + colWidth + 24, "FROM", fromLines);
+  y += 34 + Math.max(customerLines.length, fromLines.length) * 11;
+
+  /* ---------- items table ---------- */
+  const hasImages = data.lines.some((line) => Boolean(line.imageDataUrl));
+  const colTotal = right;
+  const colDisc = right - 74;
+  const colPrice = right - 134;
+  const colQty = right - 194;
+  const itemX = MARGIN + 8;
+  const imgSize = 26;
+  const nameX = hasImages ? itemX + imgSize + 8 : itemX;
+  const nameWidth = colQty - nameX - 24;
+
+  const tableHead = () => {
+    fill([246, 247, 250]);
+    doc.rect(MARGIN, y, pageWidth - MARGIN * 2, 22, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    setColor(MUTED);
+    doc.text("PRODUCT / SERVICE", itemX, y + 14);
+    doc.text("QTY", colQty, y + 14, { align: "right" });
+    doc.text("UNIT PRICE", colPrice, y + 14, { align: "right" });
+    doc.text("DISC.", colDisc, y + 14, { align: "right" });
+    doc.text("TOTAL", colTotal - 8, y + 14, { align: "right" });
+    y += 22;
+  };
+
+  tableHead();
+
+  data.lines.forEach((line) => {
+    const descText = [line.description, line.spec].filter(Boolean).join(" · ");
+    const descLines = descText ? (doc.splitTextToSize(descText, nameWidth) as string[]).slice(0, 3) : [];
+    const rowHeight = Math.max(hasImages ? imgSize + 12 : 24, 22 + descLines.length * 10);
+    if (y + rowHeight > pageHeight - 120) {
+      newPage();
+      tableHead();
+    }
+    if (hasImages && line.imageDataUrl) {
+      try {
+        doc.addImage(line.imageDataUrl, imageFormat(line.imageDataUrl), itemX, y + 6, imgSize, imgSize, undefined, "FAST");
+      } catch {
+        /* unreadable image: fall back to text-only row */
+      }
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    setColor(NEUTRAL);
+    doc.text((doc.splitTextToSize(line.name, nameWidth) as string[])[0] ?? line.name, nameX, y + 16);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.text(String(line.quantity), colQty, y + 16, { align: "right" });
+    doc.text(money(line.unitPrice), colPrice, y + 16, { align: "right" });
+    doc.text(line.discount ? money(line.discount) : "—", colDisc, y + 16, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.text(money(line.lineTotal), colTotal - 8, y + 16, { align: "right" });
+    if (descLines.length) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      setColor(MUTED);
+      descLines.forEach((text, index) => doc.text(text, nameX, y + 28 + index * 10));
     }
     y += rowHeight;
-    doc.setDrawColor(232, 232, 236);
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
     doc.line(MARGIN, y, right, y);
   });
 
-  /* totals */
-  y += 18;
-  const totals: [string, string][] = [
-    ["Subtotal", money(data.subtotal)],
-    ["Tax", money(data.taxAmount)],
-  ];
-  if (data.discountAmount) totals.push(["Discount", `- ${money(data.discountAmount)}`]);
-  doc.setFontSize(10);
-  totals.forEach(([label, value]) => {
-    doc.setTextColor(110, 110, 120);
+  /* ---------- summary ---------- */
+  ensure(120);
+  y += 20;
+  const rows: [string, string][] = [["Subtotal", money(data.subtotal)]];
+  if (data.showTax && data.taxAmount) rows.push(["Tax", money(data.taxAmount)]);
+  if (data.discountAmount) rows.push(["Discount", `- ${money(data.discountAmount)}`]);
+  if (data.otherCharges) rows.push(["Other charges", money(data.otherCharges)]);
+  doc.setFontSize(9.5);
+  rows.forEach(([label, value]) => {
+    doc.setFont("helvetica", "normal");
+    setColor(MUTED);
     doc.text(label, colPrice, y, { align: "right" });
-    doc.setTextColor(35, 35, 40);
+    setColor(NEUTRAL);
     doc.text(value, colTotal - 8, y, { align: "right" });
-    y += 16;
+    y += 15;
   });
 
-  doc.setFillColor(DARK[0], DARK[1], DARK[2]);
-  doc.rect(colPrice - 90, y - 2, right - (colPrice - 90), 30, "F");
-  doc.setTextColor(255, 255, 255);
+  fill(NEUTRAL);
+  doc.rect(colPrice - 110, y - 2, right - (colPrice - 110), 30, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
+  doc.setTextColor(255, 255, 255);
   doc.text("TOTAL", colPrice, y + 18, { align: "right" });
-  doc.setTextColor(AMBER[0], AMBER[1], AMBER[2]);
+  setColor(accent);
   doc.text(`TZS ${money(data.total)}`, colTotal - 8, y + 18, { align: "right" });
-  y += 42;
+  y += 44;
 
   if (typeof data.amountPaid === "number") {
+    ensure(46);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(90, 90, 100);
-    doc.text(`Paid: TZS ${money(data.amountPaid)}`, colPrice, y, { align: "right" });
-    doc.text(`Balance: TZS ${money(Math.max(0, data.total - data.amountPaid))}`, colTotal - 8, y + 14, { align: "right" });
-    y += 32;
+    doc.setFontSize(9.5);
+    setColor(MUTED);
+    doc.text(`Amount paid: TZS ${money(data.amountPaid)}`, colTotal - 8, y, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    setColor(NEUTRAL);
+    doc.text(`Balance due: TZS ${money(Math.max(0, data.total - data.amountPaid))}`, colTotal - 8, y + 14, { align: "right" });
+    y += 34;
   }
 
-  if (data.notes) {
+  /* ---------- terms & notes (optional only) ---------- */
+  const sections: [string, string][] = [];
+  if (data.paymentTerms) sections.push(["PAYMENT TERMS", data.paymentTerms]);
+  if (data.deliveryTerms) sections.push(["DELIVERY TERMS", data.deliveryTerms]);
+  if (data.validityNote) sections.push(["VALIDITY", data.validityNote]);
+  if (data.bankDetails) sections.push(["PAYMENT DETAILS", data.bankDetails]);
+  if (data.notes) sections.push(["NOTES", data.notes]);
+  if (data.terms) sections.push(["TERMS & CONDITIONS", data.terms]);
+
+  sections.forEach(([heading, body]) => {
+    const bodyLines = doc.splitTextToSize(body, pageWidth - MARGIN * 2) as string[];
+    ensure(24 + bodyLines.length * 11);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(110, 110, 120);
-    doc.text("NOTES", MARGIN, y);
+    doc.setFontSize(7.5);
+    setColor(MUTED);
+    doc.text(heading, MARGIN, y);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setTextColor(60, 60, 70);
-    doc.text(doc.splitTextToSize(data.notes, pageWidth - MARGIN * 2), MARGIN, y + 14);
-  }
+    setColor(NEUTRAL);
+    bodyLines.forEach((text, index) => doc.text(text, MARGIN, y + 14 + index * 11));
+    y += 22 + bodyLines.length * 11;
+  });
 
+  /* ---------- signature ---------- */
+  ensure(70);
+  y += 12;
+  doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+  doc.line(right - 190, y + 26, right, y + 26);
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.setTextColor(150, 150, 160);
-  doc.text(
-    data.footer ?? (data.kind === "INVOICE" ? "Thank you for your business." : "This quotation is valid until the date shown above."),
-    pageWidth / 2,
-    pageHeight - 30,
-    { align: "center" },
-  );
+  setColor(MUTED);
+  doc.text("Authorized signature", right - 190, y + 38);
+  doc.text(data.business.name, right - 190, y + 49);
 
-  doc.save(fileName);
+  drawWatermark();
+  drawFooter();
+  return doc;
+}
+
+/** Object URL for an in-app preview that matches the exported file exactly. */
+export function salesDocumentPreviewUrl(data: PdfDocument) {
+  return renderSalesDocument(data).output("bloburl") as unknown as string;
+}
+
+/** Build and download the document. */
+export function buildSalesDocumentPdf(data: PdfDocument, fileName: string) {
+  renderSalesDocument(data).save(fileName);
 }
