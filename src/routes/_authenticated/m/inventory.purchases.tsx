@@ -21,11 +21,15 @@ const today = () => new Date().toISOString().slice(0, 10);
 const purchaseNo = () => `PUR-${Date.now().toString().slice(-6)}`;
 
 function PurchasesPage() {
-  const { purchases, purchaseItems, products, suppliers, savePurchase, deletePurchase, receivePurchase, returnPurchase, movements } =
+  const { purchases, purchaseItems, products, suppliers, saveSupplier, savePurchase, deletePurchase, receivePurchase, returnPurchase, movements } =
     useInventory();
 
   const [editing, setEditing] = useState<InventoryPurchaseRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [formSeed, setFormSeed] = useState<Record<string, FieldValue> | null>(null);
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [justAddedSuppliers, setJustAddedSuppliers] = useState<string[]>([]);
+  const liveValues = useRef<Record<string, FieldValue>>({});
   const [lines, setLines] = useState<PurchaseLine[]>([]);
   const [detail, setDetail] = useState<InventoryPurchaseRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<InventoryPurchaseRecord | null>(null);
