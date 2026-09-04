@@ -24,6 +24,8 @@ export type Field = {
   half?: boolean;
   /** Render the field only when this predicate passes for the current values. */
   showIf?: (values: Record<string, FieldValue>) => boolean;
+  /** Optional shortcut shown next to the label, e.g. "+ New supplier". */
+  action?: { label: string; onClick: () => void };
 };
 
 export function RecordDialog({
