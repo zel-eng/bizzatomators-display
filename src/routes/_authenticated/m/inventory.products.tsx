@@ -1,25 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useInventory, formatMoney, stockStatus, type ProductRecord } from "@/components/inventory/inventory-provider";
 import { RecordDialog, ConfirmDialog, num, str, type FieldValue } from "@/components/tax/record-dialog";
 import { DetailsDrawer, StatusBadge, SummaryStrip, TaxTable, TaxWorkspace, exportCsv } from "@/components/tax/tax-workspace";
-import { supabase } from "@/integrations/supabase/client";
+import { ProductImagePicker, ProductThumb, uploadProductImage, useProductImageUrl, productPlaceholder } from "@/components/inventory/product-image";
+import { useBusinessProfile } from "@/hooks/use-business-profile";
+import { generateSku } from "@/lib/product-sku";
 
 function ProductPhoto({ path }: { path?: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!path) { setUrl(null); return; }
-    void supabase.storage.from("product-images").createSignedUrl(path, 60 * 60).then(({ data }) => setUrl(data?.signedUrl ?? null));
-  }, [path]);
-  if (!path) return <span className="text-white/50">No photo — use Scan on mobile</span>;
-  if (!url) return <span className="text-white/50">Loading…</span>;
-  return <img src={url} alt="Product photo" className="max-h-28 rounded-xl object-contain" />;
+  const url = useProductImageUrl(path);
+  return <img src={url ?? productPlaceholder} alt="Product photo" className="max-h-28 rounded-xl object-contain" />;
 }
 
 export const Route = createFileRoute("/_authenticated/m/inventory/products")({ component: ProductsPage });
+
 
 function ProductsPage() {
   const { products, categories, purchases, purchaseItems, saveProduct, deleteProduct, metrics } = useInventory();
