@@ -167,8 +167,6 @@ function ProductsPage() {
           editing
             ? {
                 name: editing.name,
-                sku: editing.sku,
-                barcode: editing.barcode,
                 category: editing.category || (categoryNames[0] ?? ""),
                 sellingPrice: editing.sellingPrice,
                 reorderLevel: editing.reorderLevel,
@@ -178,11 +176,10 @@ function ProductsPage() {
         }
         onClose={() => setFormOpen(false)}
         onSubmit={submit}
+        blockSubmit={!editing && !photo ? "Add a product photo — every new product needs one." : null}
         fields={[
           { name: "name", label: "Product name", type: "text", required: true, half: true },
           { name: "category", label: "Category", type: "select", options: categoryNames.length ? categoryNames : ["Uncategorised"], half: true },
-          { name: "sku", label: "SKU", type: "text", half: true },
-          { name: "barcode", label: "Barcode", type: "text", half: true },
           { name: "sellingPrice", label: "Selling price (current)", type: "number", required: true, half: true },
           { name: "reorderLevel", label: "Reorder level", type: "number", half: true },
           ...(editing
@@ -194,12 +191,25 @@ function ProductsPage() {
           { name: "description", label: "Description", type: "text" },
         ]}
         extra={
-          <p className="text-[11px] text-white/45">
-            {editing
-              ? "Inventory cost is maintained automatically from received purchases. Changing the selling price never changes past sales."
-              : "Leave opening stock at 0 if you have no goods yet — stock arrives when you receive a purchase."}
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-white/80">Product photo {editing ? "" : "(required)"}</p>
+            <ProductImagePicker
+              value={photo}
+              existingPath={editing?.imagePath}
+              onChange={setPhoto}
+              invalid={!editing && !photo}
+            />
+            <p className="text-[11px] text-white/45">
+              A product is identified by its photo and name. The product code (SKU) is created automatically when you save.
+            </p>
+            <p className="text-[11px] text-white/45">
+              {editing
+                ? "Inventory cost is maintained automatically from received purchases. Changing the selling price never changes past sales."
+                : "Leave opening stock at 0 if you have no goods yet — stock arrives when you receive a purchase."}
+            </p>
+          </div>
         }
+
       />
 
       <DetailsDrawer
