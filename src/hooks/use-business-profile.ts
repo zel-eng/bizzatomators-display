@@ -13,7 +13,7 @@ export type BusinessIdentity = {
   accent: [number, number, number] | null;
 };
 
-const EMPTY: BusinessIdentity = { name: "Bizz", address: "", phone: "", logoPath: "", logoDataUrl: null, accent: null };
+const EMPTY: BusinessIdentity = { name: "", address: "", phone: "", logoPath: "", logoDataUrl: null, accent: null };
 
 /** Business identity used on printed sales documents. */
 export function useBusinessProfile() {

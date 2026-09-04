@@ -12,6 +12,7 @@ import { BusinessProfileStep } from "@/components/auth/signup-scope-steps";
 import { savePendingScope } from "@/lib/onboarding-scope";
 import { EMPTY_CHARACTERISTICS, type BusinessCharacteristics } from "@/lib/business-scope";
 import { formatPhone, isValidPhone, normalizePhone, phoneIdentity } from "@/lib/phone-auth";
+import { uploadBusinessLogo } from "@/lib/business-logo";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -112,6 +113,7 @@ function AuthPage() {
     ...EMPTY_CHARACTERISTICS,
     flags: {},
   });
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [revealed, setRevealed] = useState(true);
@@ -187,6 +189,12 @@ function AuthPage() {
           celebratingRef.current = false;
           throw error;
         }
+        const userId = data.user?.id;
+        if (userId && logoDataUrl) {
+          const logoPath = await uploadBusinessLogo(logoDataUrl);
+          const { error: logoError } = await supabase.from("profiles").upsert({ id: userId, logo_path: logoPath }, { onConflict: "id" });
+          if (logoError) throw logoError;
+        }
         hasSessionRef.current = Boolean(data.session);
         setMode(null);
         setSignupStep(1);
@@ -251,6 +259,8 @@ function AuthPage() {
           <BusinessProfileStep
             value={characteristics}
             onChange={(patch) => setCharacteristics((current) => ({ ...current, ...patch }))}
+            logoDataUrl={logoDataUrl}
+            onLogoChange={setLogoDataUrl}
           />
         )}
         {mode === "signin" && (

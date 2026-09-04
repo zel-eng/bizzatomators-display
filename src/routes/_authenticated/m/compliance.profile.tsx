@@ -3,12 +3,14 @@ import { Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge, SummaryStrip, TaxWorkspace } from "@/components/tax/tax-workspace";
 import { RecordDialog } from "@/components/tax/record-dialog";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useCompliance, APPLICABILITY_LABEL, BUSINESS_TYPES, LEGAL_FORMS, SECTORS, TAX_REGISTRATIONS,
 } from "@/components/compliance/compliance-provider";
 import { Button } from "@/components/ui/button";
+import { BusinessLogoPicker } from "@/components/business/logo-picker";
 import { useBusinessProfile } from "@/hooks/use-business-profile";
+import { uploadBusinessLogo } from "@/lib/business-logo";
 
 export const Route = createFileRoute("/_authenticated/m/compliance/profile")({
   head: () => ({
@@ -26,6 +28,13 @@ function ProfilePage() {
   const { profile, saveProfile, rules, applicability, metrics } = useCompliance();
   const [open, setOpen] = useState(false);
   const account = useBusinessProfile();
+  const [brandAddress, setBrandAddress] = useState(account.address);
+  const [brandLogo, setBrandLogo] = useState<string | null>(account.logoDataUrl);
+
+  useEffect(() => {
+    setBrandAddress(account.address);
+    setBrandLogo(account.logoDataUrl);
+  }, [account.address, account.logoDataUrl]);
 
   const businessName = profile.name || account.name;
   const incomplete = metrics.profileCompleteness < 100;
@@ -73,6 +82,56 @@ function ProfilePage() {
           </Button>
         </section>
       ) : null}
+
+      <section className="rounded-3xl border border-white/15 bg-white/[0.06] p-4 backdrop-blur-xl">
+        <h3 className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-white/60">
+          Business branding
+        </h3>
+        <div className="mt-4 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.16em] text-white/55">Business address</label>
+            <textarea
+              rows={3}
+              value={brandAddress}
+              onChange={(event) => setBrandAddress(event.target.value)}
+              className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/35"
+              placeholder="Street, city, country"
+            />
+            <div className="mt-2 flex justify-end">
+              <Button
+                size="sm"
+                className="h-9 bg-amber-400 text-black hover:bg-amber-300"
+                onClick={async () => {
+                  await account.saveBranding({ address: brandAddress });
+                  toast.success("Business address saved");
+                }}
+              >
+                Save address
+              </Button>
+            </div>
+          </div>
+
+          <BusinessLogoPicker
+            value={brandLogo}
+            existingPath={account.logoPath || undefined}
+            onChange={async (next) => {
+              setBrandLogo(next);
+              if (next === null) {
+                await account.saveBranding({ logoPath: null });
+                return;
+              }
+              try {
+                const path = await uploadBusinessLogo(next);
+                await account.saveBranding({ logoPath: path });
+              } catch (error: any) {
+                toast.error(error?.message ?? "Could not save logo");
+                setBrandLogo(account.logoDataUrl);
+              }
+            }}
+            hint="Optional: this logo will be used on quotations, invoices and other business documents."
+          />
+        </div>
+      </section>
 
       <section className="rounded-3xl border border-white/15 bg-white/[0.06] p-4 backdrop-blur-xl">
         <h3 className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-white/60">

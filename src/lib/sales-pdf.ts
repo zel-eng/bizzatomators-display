@@ -7,8 +7,10 @@ import jsPDF from "jspdf";
  */
 
 const MARGIN = 42;
-const NEUTRAL: RGB = [32, 38, 52];
-const MUTED: RGB = [122, 130, 145];
+const NAVY: RGB = [7, 29, 53];
+const NAVY_DEEP: RGB = [2, 23, 41];
+const NEUTRAL: RGB = [31, 39, 49];
+const MUTED: RGB = [104, 117, 134];
 const LINE: RGB = [226, 229, 236];
 
 type RGB = [number, number, number];
@@ -79,45 +81,60 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
 
   /* ---------- reusable chrome ---------- */
   const drawHeader = (compact: boolean) => {
-    let cursor = MARGIN;
+    const top = compact ? 24 : 0;
     const logo = data.business.logoDataUrl;
-    let textX = MARGIN;
+    let textX = logo ? MARGIN + 50 : MARGIN;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, top, pageWidth, 150, "F");
+    doc.setFillColor(accent[0], accent[1], accent[2]);
+    doc.rect(0, top, pageWidth, 7, "F");
+    doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.rect(0, top + 7, pageWidth, 7, "F");
     if (logo) {
       try {
-        doc.addImage(logo, imageFormat(logo), MARGIN, cursor - 4, 52, 52, undefined, "FAST");
-        textX = MARGIN + 66;
+        doc.addImage(logo, imageFormat(logo), MARGIN, top + 38, 38, 38, undefined, "FAST");
       } catch {
-        textX = MARGIN;
+        /* Logo is optional; the business name remains visible. */
       }
     }
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(compact ? 13 : 16);
-    setColor(NEUTRAL);
-    doc.text(data.business.name || "Business", textX, cursor + 14);
+    doc.setFontSize(compact ? 13 : 18);
+    setColor(NAVY);
+    if (data.business.name) doc.text(data.business.name, textX, top + 55);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
+    setColor(accent);
+    doc.text("AUTOMATE • OPTIMIZE • GROW", textX, top + 70);
     setColor(MUTED);
     const bizLines = [data.business.address, data.business.phone, data.business.registration].filter(Boolean) as string[];
-    bizLines.slice(0, compact ? 1 : 3).forEach((line, index) => doc.text(line, textX, cursor + 28 + index * 11));
+    bizLines.slice(0, compact ? 1 : 3).forEach((line, index) => doc.text(line, textX, top + 88 + index * 11));
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(compact ? 13 : 19);
-    setColor(accent);
-    doc.text(data.kind, right, cursor + 14, { align: "right" });
+    doc.setFontSize(compact ? 16 : 20);
+    setColor(NAVY);
+    doc.text(data.kind, right, top + 55, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
+    setColor(accent);
+    doc.text("PRODUCTS & SERVICES", right, top + 73, { align: "right" });
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.line(right - 252, top + 86, right, top + 86);
     setColor(MUTED);
-    const meta = [
-      `No. ${data.number}`,
-      `Date: ${data.date}`,
-      ...(data.secondaryLabel && data.secondaryValue ? [`${data.secondaryLabel}: ${data.secondaryValue}`] : []),
+    const meta: [string, string][] = [
+      [`${data.kind === "INVOICE" ? "INVOICE" : "QUOTATION"} NO.`, data.number],
+      ["ISSUE DATE", data.date],
+      ...(data.secondaryLabel && data.secondaryValue ? [[data.secondaryLabel.toUpperCase(), data.secondaryValue] as [string, string]] : []),
     ];
-    meta.slice(0, compact ? 1 : 3).forEach((line, index) => doc.text(line, right, cursor + 30 + index * 12, { align: "right" }));
+    meta.slice(0, compact ? 1 : 3).forEach((line, index) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text(line[0], right - 252, top + 105 + index * 17);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.text(line[1], right, top + 105 + index * 17, { align: "right" });
+    });
 
-    cursor += compact ? 44 : Math.max(66, 30 + Math.max(bizLines.length, meta.length) * 12);
-    fill(accent);
-    doc.rect(MARGIN, cursor, pageWidth - MARGIN * 2, 2.4, "F");
-    return cursor + (compact ? 18 : 24);
+    return top + 160;
   };
 
   const drawFooter = () => {
@@ -159,7 +176,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   };
 
   const ensure = (needed: number) => {
-    if (y + needed > pageHeight - 70) newPage();
+    if (y + needed > pageHeight - 150) newPage();
   };
 
   /* ---------- status pill ---------- */
@@ -177,18 +194,23 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
 
   /* ---------- parties ---------- */
   const colWidth = (pageWidth - MARGIN * 2 - 24) / 2;
-  const partyBlock = (x: number, heading: string, lines: string[]) => {
+  const partyBlock = (x: number, heading: string, lines: string[], cardHeight: number, emptyLabel: string) => {
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(x, y - 18, colWidth, cardHeight, 10, 10, "FD");
+    doc.setFillColor(accent[0], accent[1], accent[2]);
+    doc.rect(x, y - 18, 5, cardHeight, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
-    setColor(MUTED);
-    doc.text(heading, x, y);
+    setColor(accent);
+    doc.text(heading, x + 16, y);
     doc.setFontSize(11);
     setColor(NEUTRAL);
-    doc.text(lines[0] || "—", x, y + 16);
+    doc.text(lines[0] || emptyLabel, x + 16, y + 16);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     setColor(MUTED);
-    lines.slice(1).forEach((line, index) => doc.text(doc.splitTextToSize(line, colWidth)[0], x, y + 30 + index * 11));
+    lines.slice(1).forEach((line, index) => doc.text(doc.splitTextToSize(line, colWidth - 30)[0], x + 16, y + 30 + index * 11));
   };
 
   const customerLines = [
@@ -196,12 +218,39 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
     ...([data.customer.address, data.customer.phone, data.customer.email].filter(Boolean) as string[]),
   ];
   const fromLines = [
-    data.business.name,
+    data.business.name || "",
     ...([data.business.address, data.business.phone, data.business.registration].filter(Boolean) as string[]),
   ];
-  partyBlock(MARGIN, data.kind === "INVOICE" ? "BILL TO" : "PREPARED FOR", customerLines);
-  partyBlock(MARGIN + colWidth + 24, "FROM", fromLines);
-  y += 34 + Math.max(customerLines.length, fromLines.length) * 11;
+  const partyHeight = 42 + Math.max(customerLines.length, fromLines.length) * 11;
+  partyBlock(MARGIN, data.kind === "INVOICE" ? "BILL TO" : "PREPARED FOR", customerLines, partyHeight, "Walk-in customer");
+  partyBlock(MARGIN + colWidth + 24, "FROM", fromLines, partyHeight, "");
+  y += partyHeight + 16;
+
+  const termItems = [
+    data.paymentTerms ? ["PAYMENT TERMS", data.paymentTerms] : null,
+    data.deliveryTerms ? ["DELIVERY", data.deliveryTerms] : null,
+    data.validityNote ? ["VALIDITY", data.validityNote] : null,
+    ["CURRENCY", "TZS — Tanzanian Shilling"],
+  ].filter(Boolean) as [string, string][];
+  if (termItems.length) {
+    const termWidth = (pageWidth - MARGIN * 2) / termItems.length;
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(MARGIN, y, pageWidth - MARGIN * 2, 62, 10, 10, "FD");
+    termItems.forEach(([heading, value], index) => {
+      const x = MARGIN + index * termWidth;
+      if (index > 0) doc.line(x, y + 12, x, y + 50);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      setColor(NAVY);
+      doc.text(heading, x + 14, y + 23);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      setColor(MUTED);
+      doc.text(doc.splitTextToSize(value, termWidth - 28)[0], x + 14, y + 41);
+    });
+    y += 78;
+  }
 
   /* ---------- items table ---------- */
   const hasImages = data.lines.some((line) => Boolean(line.imageDataUrl));
@@ -215,12 +264,14 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   const nameWidth = colQty - nameX - 24;
 
   const tableHead = () => {
-    fill([246, 247, 250]);
+    fill(NAVY);
     doc.rect(MARGIN, y, pageWidth - MARGIN * 2, 22, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
-    setColor(MUTED);
+    doc.setTextColor(255, 255, 255);
+    doc.text("#", MARGIN + 8, y + 14);
     doc.text("PRODUCT / SERVICE", itemX, y + 14);
+    if (hasImages) doc.text("DESCRIPTION", nameX + 116, y + 14);
     doc.text("QTY", colQty, y + 14, { align: "right" });
     doc.text("UNIT PRICE", colPrice, y + 14, { align: "right" });
     doc.text("DISC.", colDisc, y + 14, { align: "right" });
@@ -230,7 +281,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
 
   tableHead();
 
-  data.lines.forEach((line) => {
+  data.lines.forEach((line, index) => {
     const descText = [line.description, line.spec].filter(Boolean).join(" · ");
     const descLines = descText ? (doc.splitTextToSize(descText, nameWidth) as string[]).slice(0, 3) : [];
     const rowHeight = Math.max(hasImages ? imgSize + 12 : 24, 22 + descLines.length * 10);
@@ -245,6 +296,13 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
         /* unreadable image: fall back to text-only row */
       }
     }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    setColor(NEUTRAL);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    setColor(MUTED);
+    doc.text(String(index + 1), MARGIN + 8, y + 16);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
     setColor(NEUTRAL);
@@ -338,7 +396,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   doc.setFontSize(8);
   setColor(MUTED);
   doc.text("Authorized signature", right - 190, y + 38);
-  doc.text(data.business.name, right - 190, y + 49);
+  if (data.business.name) doc.text(data.business.name, right - 190, y + 49);
 
   drawWatermark();
   drawFooter();

@@ -9,7 +9,9 @@ import { DocumentDialog, emptyDraft, type DocumentDraft } from "@/components/sal
 import { productSpec } from "@/components/sales/line-items-editor";
 import { docNumber, formatMoney, lineTotals, useSales, type QuotationRecord } from "@/components/sales/sales-provider";
 import { useBusinessProfile } from "@/hooks/use-business-profile";
-import { buildSalesDocumentPdf } from "@/lib/sales-pdf";
+import { businessLogoDataUrl } from "@/lib/business-logo";
+import { buildSalesDocumentPdf, type PdfDocument } from "@/lib/sales-pdf";
+import { DocumentPreviewDialog } from "@/components/documents/document-preview";
 
 export const Route = createFileRoute("/_authenticated/m/sales/quotations")({ component: QuotationsPage });
 
@@ -20,6 +22,7 @@ function QuotationsPage() {
   const [editing, setEditing] = useState<QuotationRecord | null>(null);
   const [detail, setDetail] = useState<QuotationRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<QuotationRecord | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<PdfDocument | null>(null);
 
   const itemsOf = (id: string) => quotationItems.filter((item) => item.quotationId === id);
 
@@ -61,29 +64,43 @@ function QuotationsPage() {
     });
   };
 
-  const download = (row: QuotationRecord) => {
+  const buildDoc = async (row: QuotationRecord): Promise<PdfDocument> => {
     const customer = customers.find((c) => c.id === row.customerId);
-    buildSalesDocumentPdf(
-      {
-        kind: "QUOTATION",
-        number: row.quoteNo,
-        date: row.quoteDate,
-        secondaryLabel: "Valid until",
-        secondaryValue: row.validUntil || "—",
-        business,
-        customer: { name: row.customerName, phone: customer?.phone, address: customer?.address },
-        lines: itemsOf(row.id).map((item) => {
-          const product = products.find((p) => p.id === item.productId);
-          return { name: item.productName, spec: product ? productSpec(product) : "", quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.lineTotal };
-        }),
-        subtotal: row.subtotal,
-        taxAmount: row.taxAmount,
-        discountAmount: row.discountAmount,
-        total: row.total,
-        notes: row.notes,
-      },
-      `${row.quoteNo}.pdf`,
-    );
+    const lines = await Promise.all(itemsOf(row.id).map(async (item) => {
+      const product = products.find((p) => p.id === item.productId);
+      const imageDataUrl = product?.imagePath ? await businessLogoDataUrl(product.imagePath) : undefined;
+      return {
+        name: item.productName,
+        spec: product ? productSpec(product) : "",
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+        imageDataUrl: imageDataUrl ?? undefined,
+      };
+    }));
+
+    return {
+      kind: row.status === "Draft" ? "DRAFT QUOTATION" : "QUOTATION",
+      number: row.quoteNo,
+      date: row.quoteDate,
+      secondaryLabel: "Valid until",
+      secondaryValue: row.validUntil || "—",
+      statusLabel: row.status,
+      business,
+      customer: { name: row.customerName, phone: customer?.phone, address: customer?.address },
+      lines,
+      subtotal: row.subtotal,
+      taxAmount: row.taxAmount,
+      showTax: row.status !== "Draft" && row.taxAmount > 0,
+      discountAmount: row.discountAmount,
+      total: row.total,
+      notes: row.notes,
+    };
+  };
+
+  const download = async (row: QuotationRecord) => {
+    const document = await buildDoc(row);
+    buildSalesDocumentPdf(document, `${row.quoteNo}.pdf`);
     toast.success("Quotation PDF generated");
   };
 
@@ -120,8 +137,9 @@ function QuotationsPage() {
         onRowClick={setDetail}
         rowActions={(row) => [
           { label: "View details", onSelect: () => setDetail(row) },
+          { label: "Preview PDF", onSelect: () => { void buildDoc(row).then(setPreviewDocument); } },
           { label: "Edit", onSelect: () => { setEditing(row); setFormOpen(true); } },
-          { label: "Download PDF", onSelect: () => download(row) },
+          { label: "Download PDF", onSelect: () => { void download(row); } },
           { label: "Mark as sent", onSelect: () => void setQuotationStatus(row.id, "Sent").then(() => toast.success("Marked as sent")) },
           { label: "Convert to invoice", onSelect: () => void convertQuotation(row.id).then(() => toast.success("Invoice created — stock updated")) },
           { label: "Delete", onSelect: () => setPendingDelete(row), danger: true },
@@ -130,6 +148,13 @@ function QuotationsPage() {
         addLabel="New quotation"
         onAdd={() => { setEditing(null); setFormOpen(true); }}
         empty={{ title: "No quotations yet", description: "Create a quotation to send prices to a customer.", icon: FileText }}
+      />
+
+      <DocumentPreviewDialog
+        open={Boolean(previewDocument)}
+        document={previewDocument}
+        fileName={previewDocument ? `${previewDocument.number}.pdf` : "document.pdf"}
+        onClose={() => setPreviewDocument(null)}
       />
 
       <DocumentDialog
@@ -167,7 +192,7 @@ function QuotationsPage() {
         footer={
           detail ? (
             <>
-              <Button variant="outline" className="border-white/15 bg-white/5 text-white hover:bg-white/15" onClick={() => download(detail)}>Download PDF</Button>
+              <Button variant="outline" className="border-white/15 bg-white/5 text-white hover:bg-white/15" onClick={() => { void download(detail); }}>Download PDF</Button>
               <Button className="bg-amber-400 text-black hover:bg-amber-300" onClick={() => { void convertQuotation(detail.id); setDetail(null); }}>Convert to invoice</Button>
             </>
           ) : null

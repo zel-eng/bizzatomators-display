@@ -14,6 +14,7 @@ import {
   SECTORS,
   TAX_REGISTRATIONS,
 } from "@/components/compliance/compliance-provider";
+import { BusinessLogoPicker } from "@/components/business/logo-picker";
 
 export { TAX_REGISTRATIONS };
 
@@ -31,9 +32,13 @@ const chip = (active: boolean) =>
 export function BusinessProfileStep({
   value,
   onChange,
+  logoDataUrl,
+  onLogoChange,
 }: {
   value: BusinessCharacteristics;
   onChange: (patch: Partial<BusinessCharacteristics>) => void;
+  logoDataUrl?: string | null;
+  onLogoChange?: (next: string | null) => void;
 }) {
   const toggleReg = (reg: string) => {
     const list = value.taxRegistrations.includes(reg)
@@ -152,6 +157,16 @@ export function BusinessProfileStep({
           Exports goods
         </button>
       </div>
+
+      {onLogoChange ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <BusinessLogoPicker
+            value={logoDataUrl ?? null}
+            onChange={onLogoChange}
+            hint="Optional: add your logo now or skip it and upload it later from the business profile."
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -10,7 +10,9 @@ import { formatMoney, useSales, type SaleRecord } from "@/components/sales/sales
 import { accountLabel, usePaymentAccounts } from "@/components/finance/source-payment";
 import { PAYMENT_METHODS } from "@/lib/expense-catalog";
 import { useBusinessProfile } from "@/hooks/use-business-profile";
-import { buildSalesDocumentPdf } from "@/lib/sales-pdf";
+import { businessLogoDataUrl } from "@/lib/business-logo";
+import { buildSalesDocumentPdf, type PdfDocument } from "@/lib/sales-pdf";
+import { DocumentPreviewDialog } from "@/components/documents/document-preview";
 
 export const Route = createFileRoute("/_authenticated/m/sales/invoices")({ component: InvoicesPage });
 
@@ -20,6 +22,7 @@ function InvoicesPage() {
   const [detail, setDetail] = useState<SaleRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SaleRecord | null>(null);
   const [payFor, setPayFor] = useState<SaleRecord | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<PdfDocument | null>(null);
   const { data: accounts = [] } = usePaymentAccounts();
 
   const rows = sales.filter((row) => row.status !== "Draft");
@@ -52,30 +55,43 @@ function InvoicesPage() {
   };
 
 
-  const download = (row: SaleRecord) => {
+  const buildDoc = async (row: SaleRecord): Promise<PdfDocument> => {
     const customer = customers.find((c) => c.id === row.customerId);
-    buildSalesDocumentPdf(
-      {
-        kind: "INVOICE",
-        number: row.invoiceNumber,
-        date: row.saleDate,
-        business,
-        customer: { name: row.customerName, phone: customer?.phone, address: customer?.address },
-        lines: saleItems
-          .filter((item) => item.saleId === row.id)
-          .map((item) => {
-            const product = products.find((p) => p.id === item.productId);
-            return { name: item.productName, spec: product ? productSpec(product) : "", quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.lineTotal };
-          }),
-        subtotal: row.subtotal,
-        taxAmount: row.taxAmount,
-        discountAmount: row.discountAmount,
-        total: row.total,
-        amountPaid: row.amountPaid,
-        notes: row.notes,
-      },
-      `${row.invoiceNumber}.pdf`,
-    );
+    const lines = await Promise.all(saleItems
+      .filter((item) => item.saleId === row.id)
+      .map(async (item) => {
+        const product = products.find((p) => p.id === item.productId);
+        const imageDataUrl = product?.imagePath ? await businessLogoDataUrl(product.imagePath) : undefined;
+        return {
+          name: item.productName,
+          spec: product ? productSpec(product) : "",
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineTotal: item.lineTotal,
+          imageDataUrl: imageDataUrl ?? undefined,
+        };
+      }));
+
+    return {
+      kind: "INVOICE",
+      number: row.invoiceNumber,
+      date: row.saleDate,
+      business,
+      customer: { name: row.customerName, phone: customer?.phone, address: customer?.address },
+      lines,
+      subtotal: row.subtotal,
+      discountAmount: row.discountAmount,
+      total: row.total,
+      amountPaid: row.amountPaid,
+      notes: row.notes,
+      statusLabel: payState(row),
+      showTax: false,
+    };
+  };
+
+  const download = async (row: SaleRecord) => {
+    const document = await buildDoc(row);
+    buildSalesDocumentPdf(document, `${row.invoiceNumber}.pdf`);
     toast.success("Invoice PDF generated");
   };
 
@@ -111,14 +127,22 @@ function InvoicesPage() {
         onRowClick={setDetail}
         rowActions={(row) => [
           { label: "View details", onSelect: () => setDetail(row) },
+          { label: "Preview PDF", onSelect: () => { void buildDoc(row).then(setPreviewDocument); } },
           ...(outstandingOf(row) > 0 ? [{ label: "Record payment", onSelect: () => setPayFor(row) }] : []),
-          { label: "Download PDF", onSelect: () => download(row) },
+          { label: "Download PDF", onSelect: () => { void download(row); } },
           { label: "Delete", onSelect: () => setPendingDelete(row), danger: true },
         ]}
         onExport={(list) =>
           exportCsv("invoices.csv", ["Invoice", "Customer", "Date", "Total", "Paid"], list.map((row) => [row.invoiceNumber, row.customerName, row.saleDate, row.total, row.amountPaid]))
         }
         empty={{ title: "No invoices yet", description: "Complete a sale to raise your first invoice.", icon: Receipt }}
+      />
+
+      <DocumentPreviewDialog
+        open={Boolean(previewDocument)}
+        document={previewDocument}
+        fileName={previewDocument ? `${previewDocument.number}.pdf` : "document.pdf"}
+        onClose={() => setPreviewDocument(null)}
       />
 
       <DetailsDrawer
@@ -133,7 +157,6 @@ function InvoicesPage() {
                 { label: "Date", value: detail.saleDate },
                 { label: "Items", value: saleItems.filter((item) => item.saleId === detail.id).map((item) => `${item.productName} x${item.quantity}`).join(", ") || "—" },
                 { label: "Subtotal", value: formatMoney(detail.subtotal) },
-                { label: "Tax", value: formatMoney(detail.taxAmount) },
                 { label: "Discount", value: formatMoney(detail.discountAmount) },
                 { label: "Total", value: formatMoney(detail.total) },
                 { label: "Paid", value: formatMoney(detail.amountPaid) },
@@ -150,7 +173,7 @@ function InvoicesPage() {
                   <CreditCard className="mr-1.5 h-4 w-4" /> Record payment
                 </Button>
               ) : null}
-              <Button variant="outline" className="border-white/15 bg-white/5 text-white hover:bg-white/15" onClick={() => download(detail)}>Download PDF</Button>
+              <Button variant="outline" className="border-white/15 bg-white/5 text-white hover:bg-white/15" onClick={() => { void download(detail); }}>Download PDF</Button>
               <Button className="bg-rose-500 text-white hover:bg-rose-400" onClick={() => { setPendingDelete(detail); setDetail(null); }}>Delete</Button>
             </>
           ) : null

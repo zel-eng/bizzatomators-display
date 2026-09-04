@@ -1,8 +1,10 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import jsPDF from "jspdf";
+import * as XLSX from "xlsx";
 import type { LucideIcon } from "lucide-react";
 import {
-  ArrowLeft, ChevronRight, Download, Filter, Home, Inbox, MoreHorizontal, MoreVertical, Package,
+  ArrowLeft, ChevronRight, Download, FileSpreadsheet, Filter, Home, Inbox, MoreHorizontal, MoreVertical, Package,
   Pencil, Plus, Scan, Search, ShoppingCart, Trash2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -250,9 +252,24 @@ export function TaxTable<T extends { id: string }>({
             </Select>
           ) : null}
           {onExport ? (
-            <Button size="sm" variant="outline" className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/15" onClick={() => onExport(visible)}>
-              <Download className="mr-1.5 h-4 w-4" /> Export
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/15">
+                  <Download className="mr-1.5 h-4 w-4" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[10rem]">
+                <DropdownMenuItem onClick={() => onExport(visible)}>
+                  <Download className="mr-2 h-4 w-4" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, "export", "Report", "excel")}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, "export", "Report", "pdf")}>
+                  <Download className="mr-2 h-4 w-4" /> PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
           {onAdd && addLabel ? (
             <Button size="sm" className="h-9 bg-amber-400 text-black hover:bg-amber-300" onClick={onAdd}>
@@ -461,18 +478,221 @@ export function RelatedList({
   );
 }
 
-/* ------------------------------- csv export ------------------------------- */
+/* ------------------------------- generic export helpers ------------------------------- */
 
-export function exportCsv(filename: string, headers: string[], rows: (string | number)[][]) {
-  const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
-  const csv = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+const exportBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+};
+
+export function exportCsv(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+  const csv = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");
+  exportBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), filename);
+}
+
+export function exportExcel(filename: string, headers: string[], rows: (string | number)[][]) {
+  const aoa: (string | number)[][] = [headers, ...rows];
+  const sheet = XLSX.utils.aoa_to_sheet(aoa);
+  sheet["!cols"] = headers.map(() => ({ wch: 22 }));
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Export");
+  const data = XLSX.write(book, { bookType: "xlsx", type: "array" });
+  exportBlob(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
+}
+
+export function exportPdf(filename: string, title: string, headers: string[], rows: (string | number)[][]) {
+  const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 42;
+  const right = pageWidth - margin;
+  const accent: [number, number, number] = [190, 140, 40];
+  const navy: [number, number, number] = [7, 29, 53];
+  const navyDeep: [number, number, number] = [2, 23, 41];
+  const neutral: [number, number, number] = [31, 39, 49];
+  const muted: [number, number, number] = [104, 117, 134];
+  const line: [number, number, number] = [222, 228, 236];
+
+  const setColor = (rgb: [number, number, number]) => doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+  const fill = (rgb: [number, number, number]) => doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+  const cleanText = (value: string | number) => String(value ?? "").slice(0, 42);
+
+  doc.setFillColor(0, 0, 0);
+  doc.rect(0, 0, pageWidth, 8, "F");
+  doc.setFillColor(accent[0], accent[1], accent[2]);
+  doc.rect(0, 8, pageWidth, 8, "F");
+
+  doc.setFillColor(navyDeep[0], navyDeep[1], navyDeep[2]);
+  doc.rect(0, 16, pageWidth, 92, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text("BUSINESS", margin, 38);
+  doc.setFontSize(27);
+  doc.text(String(title).toUpperCase(), margin + 82, 38);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(216, 181, 106);
+  doc.text("AUTOMATE • OPTIMIZE • GROW", margin + 82, 56);
+
+  doc.setFont("helvetica", "normal");
+  setColor([210, 220, 230]);
+  doc.text("Operational summary • Digital export", margin, 78);
+  doc.text(`Generated ${new Date().toLocaleString("en-GB")}`, right, 78, { align: "right" });
+
+  const cardY = 136;
+  const cardWidth = pageWidth - margin * 2;
+  const leftCardWidth = (cardWidth - 24) / 2;
+
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(margin, cardY, cardWidth, 118, 12, 12, "FD");
+  doc.setFillColor(accent[0], accent[1], accent[2]);
+  doc.rect(margin, cardY, 8, 118, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  setColor(accent);
+  doc.text("DETAILS", margin + 18, cardY + 22);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  setColor(neutral);
+  doc.text("Prepared for", margin + 18, cardY + 48);
+  doc.setFont("helvetica", "bold");
+  doc.text(String(title), margin + 18, cardY + 64);
+  doc.setFont("helvetica", "normal");
+  doc.text("Business data export generated from live records", margin + 18, cardY + 82);
+  doc.text(`Rows: ${rows.length}`, margin + 18, cardY + 100);
+
+  doc.setFont("helvetica", "bold");
+  setColor(accent);
+  doc.text("REPORT", margin + leftCardWidth + 24, cardY + 22);
+  doc.setFont("helvetica", "normal");
+  setColor(neutral);
+  [
+    ["Reference", filename],
+    ["Created", new Date().toLocaleDateString("en-GB")],
+    ["Status", rows.length ? "Available" : "No data"],
+  ].forEach(([label, value], index) => {
+    const y = cardY + 48 + index * 18;
+    doc.setFont("helvetica", "bold");
+    doc.text(String(label), margin + leftCardWidth + 24, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(value), margin + leftCardWidth + 138, y);
+  });
+
+  let y = 292;
+  const tableWidth = pageWidth - margin * 2;
+  const colWidth = tableWidth / Math.max(headers.length, 1);
+
+  const drawTableHeader = () => {
+    fill([245, 246, 250]);
+    doc.rect(margin, y, tableWidth, 24, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    setColor(muted);
+    headers.forEach((header, index) => {
+      doc.text(String(header).slice(0, 20), margin + 8 + colWidth * index, y + 15);
+    });
+    y += 24;
+  };
+
+  drawTableHeader();
+
+  if (rows.length) {
+    rows.forEach((row) => {
+      if (y > pageHeight - 145) {
+        doc.addPage();
+        y = margin + 18;
+        drawTableHeader();
+      }
+      doc.setDrawColor(line[0], line[1], line[2]);
+      doc.line(margin, y, right, y);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.2);
+      setColor(neutral);
+      row.forEach((cell, index) => {
+        doc.text(cleanText(cell), margin + 8 + colWidth * index, y + 14);
+      });
+      y += 20;
+    });
+    doc.line(margin, y, right, y);
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    setColor(muted);
+    doc.text("No records to display.", margin + 8, y + 18);
+  }
+
+  const summaryY = y + 18;
+  const summaryX = pageWidth - 200;
+  doc.setFillColor(navy[0], navy[1], navy[2]);
+  doc.roundedRect(summaryX, summaryY, 158, 86, 10, 10, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  setColor([255, 255, 255]);
+  doc.text("SUMMARY", summaryX + 14, summaryY + 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text("Records", summaryX + 14, summaryY + 42);
+  doc.text(String(rows.length), summaryX + 120, summaryY + 42, { align: "right" });
+  doc.text("Export", summaryX + 14, summaryY + 60);
+  doc.text("PDF", summaryX + 120, summaryY + 60, { align: "right" });
+  doc.setFillColor(accent[0], accent[1], accent[2]);
+  doc.rect(summaryX, summaryY + 68, 158, 18, "F");
+  setColor([255, 255, 255]);
+  doc.setFont("helvetica", "bold");
+  doc.text("READY", summaryX + 14, summaryY + 81);
+
+  doc.setDrawColor(accent[0], accent[1], accent[2]);
+  doc.line(right - 184, pageHeight - 120, right, pageHeight - 120);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  setColor(muted);
+  doc.text("Authorized signature", right - 184, pageHeight - 96);
+
+  doc.setFillColor(navyDeep[0], navyDeep[1], navyDeep[2]);
+  doc.rect(0, pageHeight - 42, pageWidth, 42, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("BIZZ AUTOMATORS", margin, pageHeight - 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(200, 210, 220);
+  doc.text("Professional business operations • Created digitally", margin + 130, pageHeight - 20);
+  doc.text("Page 1", right, pageHeight - 20, { align: "right" });
+
+  doc.save(`${filename}.pdf`);
+}
+
+export function exportTableRows<T extends { id: string }>(
+  rows: T[],
+  columns: Array<{ key: string; label: string; render?: (row: T) => React.ReactNode }>,
+  filename = "export",
+  title = "Report",
+  format: "csv" | "excel" | "pdf" = "csv",
+) {
+  const headers = columns.map((column) => column.label);
+  const data = rows.map((row) => columns.map((column) => {
+    if (column.render) {
+      const value = column.render(row);
+      if (typeof value === "string" || typeof value === "number") return value;
+      return value ? String(value) : "";
+    }
+    const raw = (row as Record<string, unknown>)[column.key];
+    return raw == null ? "" : String(raw);
+  }));
+
+  if (format === "excel") exportExcel(`${filename}.xlsx`, headers, data);
+  else if (format === "pdf") exportPdf(`${filename}.pdf`, title, headers, data);
+  else exportCsv(`${filename}.csv`, headers, data);
 }
 
 export function TaxBottomNav() {
