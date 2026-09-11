@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import * as XLSX from "xlsx";
+import { createChrome, INK, LINE, MARGIN, MUTED, NAVY, PANEL, type DocumentBusiness } from "@/lib/sales-pdf";
 
 export type ReportPayload = {
   filename: string;
@@ -8,7 +9,12 @@ export type ReportPayload = {
   summary?: [string, string][];
   headers: string[];
   rows: (string | number)[][];
+  /** Registered business identity printed on the report. */
+  business?: DocumentBusiness;
+  /** Section this report belongs to, e.g. Invoices, Quotations, Purchases. */
+  section?: string;
 };
+
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
