@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import * as XLSX from "xlsx";
+import { createChrome, INK, LINE, MARGIN, MUTED, NAVY, PANEL, type DocumentBusiness } from "@/lib/sales-pdf";
 
 export type ReportPayload = {
   filename: string;
@@ -8,7 +9,12 @@ export type ReportPayload = {
   summary?: [string, string][];
   headers: string[];
   rows: (string | number)[][];
+  /** Registered business identity printed on the report. */
+  business?: DocumentBusiness;
+  /** Section this report belongs to, e.g. Invoices, Quotations, Purchases. */
+  section?: string;
 };
+
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -55,73 +61,111 @@ export function exportReportExcel(payload: ReportPayload) {
 }
 
 export function exportReportPdf(payload: ReportPayload) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
-
-  doc.setFillColor(17, 17, 20);
-  doc.rect(0, 0, pageWidth, 90, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.text(payload.title, margin, 46);
-  doc.setFontSize(10);
-  doc.setTextColor(240, 190, 80);
-  doc.text(payload.subtitle ?? `Generated ${new Date().toLocaleString("en-GB")}`, margin, 68);
-
-  let y = 126;
-  doc.setTextColor(30, 30, 30);
+  const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
+  const business: DocumentBusiness = payload.business ?? { name: payload.title };
+  const generated = new Date().toLocaleString("en-GB");
+  const chrome = createChrome(doc, {
+    business,
+    title: payload.title,
+    caption: payload.section ? `${payload.section} REPORT` : "BUSINESS REPORT",
+    meta: [
+      ["REPORT", payload.section ?? payload.title],
+      ["GENERATED", generated],
+      ...(payload.subtitle ? ([["PERIOD", payload.subtitle]] as [string, string][]) : []),
+    ],
+    footerNote: payload.subtitle ?? `Generated ${generated}`,
+  });
+  const { pageWidth, right, accent } = chrome;
+  let y = chrome.header(false);
+  const newPage = () => {
+    doc.addPage();
+    y = chrome.header(true);
+  };
 
   if (payload.summary?.length) {
-    doc.setFontSize(13);
-    doc.text("Summary", margin, y);
-    y += 18;
-    doc.setFontSize(10);
-    payload.summary.forEach(([label, value]) => {
-      if (y > pageHeight - margin) { doc.addPage(); y = margin + 20; }
-      doc.setTextColor(90, 90, 90);
-      doc.text(String(label), margin, y);
-      doc.setTextColor(20, 20, 20);
-      doc.text(String(value), pageWidth - margin, y, { align: "right" });
-      y += 16;
+    const rowsPerCol = Math.ceil(payload.summary.length / 2);
+    const boxHeight = 24 + rowsPerCol * 16;
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.setFillColor(PANEL[0], PANEL[1], PANEL[2]);
+    doc.roundedRect(MARGIN, y, pageWidth - MARGIN * 2, boxHeight, 9, 9, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(accent[0], accent[1], accent[2]);
+    doc.text("SUMMARY", MARGIN + 14, y + 15);
+    const colWidth = (pageWidth - MARGIN * 2) / 2;
+    payload.summary.forEach(([label, value], index) => {
+      const col = Math.floor(index / rowsPerCol);
+      const rowY = y + 30 + (index % rowsPerCol) * 16;
+      const x = MARGIN + 14 + col * colWidth;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text(String(label), x, rowY);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+      doc.text(String(value), x + colWidth - 28, rowY, { align: "right" });
     });
-    y += 14;
+    y += boxHeight + 18;
   }
 
-  const usable = pageWidth - margin * 2;
+  const usable = pageWidth - MARGIN * 2;
   const colWidth = usable / Math.max(payload.headers.length, 1);
 
   const drawHead = () => {
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, y - 12, usable, 20, "F");
-    doc.setFontSize(9);
-    doc.setTextColor(60, 60, 60);
+    doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.rect(MARGIN, y, usable, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
     payload.headers.forEach((header, index) => {
-      doc.text(String(header).slice(0, 22), margin + 4 + colWidth * index, y + 2);
+      const x = MARGIN + 10 + colWidth * index;
+      const align = index === payload.headers.length - 1 ? "right" : "left";
+      doc.text(
+        String(header).toUpperCase(),
+        align === "right" ? right - 10 : x,
+        y + 13,
+        align === "right" ? { align: "right" } : undefined,
+      );
     });
-    y += 22;
+    y += 20;
   };
 
-  doc.setFontSize(13);
-  doc.setTextColor(30, 30, 30);
-  doc.text("Details", margin, y);
-  y += 22;
   drawHead();
 
-  doc.setFontSize(9);
-  payload.rows.forEach((row) => {
-    if (y > pageHeight - margin) { doc.addPage(); y = margin + 20; drawHead(); }
-    doc.setTextColor(35, 35, 35);
+  payload.rows.forEach((row, rowIndex) => {
+    if (y + 18 > chrome.bottomLimit) {
+      newPage();
+      drawHead();
+    }
+    if (rowIndex % 2 === 1) {
+      doc.setFillColor(250, 251, 253);
+      doc.rect(MARGIN, y, usable, 18, "F");
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(INK[0], INK[1], INK[2]);
     row.forEach((cell, index) => {
-      doc.text(String(cell ?? "").slice(0, 24), margin + 4 + colWidth * index, y);
+      const text = String(cell ?? "");
+      const last = index === payload.headers.length - 1;
+      const clipped = (doc.splitTextToSize(text, colWidth - 14) as string[])[0] ?? text;
+      if (last) doc.text(clipped, right - 10, y + 12, { align: "right" });
+      else doc.text(clipped, MARGIN + 10 + colWidth * index, y + 12);
     });
-    y += 16;
+    y += 18;
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.line(MARGIN, y, right, y);
   });
 
   if (!payload.rows.length) {
-    doc.setTextColor(120, 120, 120);
-    doc.text("No records for this period.", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+    doc.text("No records for this period.", MARGIN + 10, y + 16);
+    y += 26;
   }
+
+  chrome.footer();
+
 
   doc.save(`${payload.filename}.pdf`);
 }

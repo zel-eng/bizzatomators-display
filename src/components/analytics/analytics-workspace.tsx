@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { exportReportCsv, exportReportExcel, exportReportPdf, type ReportPayload } from "@/lib/report-export";
+import { useBusinessProfile } from "@/hooks/use-business-profile";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -58,6 +59,7 @@ export function AnalyticsWorkspace({
 }: Props) {
   const navigate = useNavigate();
   const router = useRouter();
+  const business = useBusinessProfile();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
 
@@ -89,10 +91,22 @@ export function AnalyticsWorkspace({
 
   const runExport = (kind: "csv" | "excel" | "pdf") => {
     if (!report) return;
+    // Every export carries the registered business identity of this account.
+    const payload: ReportPayload = {
+      ...report,
+      section: report.section ?? title,
+      business: report.business ?? {
+        name: business.name,
+        address: business.address,
+        phone: business.phone,
+        logoDataUrl: business.logoDataUrl,
+        accent: business.accent,
+      },
+    };
     try {
-      if (kind === "csv") exportReportCsv(report);
-      if (kind === "excel") exportReportExcel(report);
-      if (kind === "pdf") exportReportPdf(report);
+      if (kind === "csv") exportReportCsv(payload);
+      if (kind === "excel") exportReportExcel(payload);
+      if (kind === "pdf") exportReportPdf(payload);
       toast.success(`Exported ${kind.toUpperCase()}`);
     } catch {
       toast.error("Export failed");
