@@ -448,7 +448,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   if (notesRendered.length) notesHeight += 12;
 
   const blockHeight = Math.max(summaryHeight, notesHeight);
-  const signatureSpace = 58;
+  const signatureSpace = 66;
   ensure(blockHeight + signatureSpace + 18);
   const bottomAnchoredTop = chrome.bottomLimit - blockHeight - signatureSpace;
   const blockTop = Math.max(y + 18, bottomAnchoredTop);
@@ -499,7 +499,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   doc.setFontSize(12);
   doc.text(money(data.total), summaryX + summaryWidth - 16, blockTop + summaryHeight - 12, { align: "right" });
 
-  y = blockTop + blockHeight + 12;
+  y = blockTop + blockHeight + 8;
 
   /* ---------- signature ---------- */
   ensure(48);
@@ -510,7 +510,10 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   setColor(NAVY);
   doc.text("AUTHORIZED SIGNATURE", right - 85, y + 30, { align: "center" });
   setColor(MUTED);
-  if (data.business.name) doc.text(data.business.name, right - 85, y + 40, { align: "center" });
+  if (data.business.name) {
+    const signatureName = (doc.splitTextToSize(data.business.name, 160) as string[])[0] ?? data.business.name;
+    doc.text(signatureName, right - 85, y + 40, { align: "center" });
+  }
 
   /* ---------- draft watermark ---------- */
   if (isDraft) {
