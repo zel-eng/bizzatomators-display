@@ -132,11 +132,15 @@ export function createChrome(doc: jsPDF, options: ChromeOptions): Chrome {
       }
     }
 
+    const titleAreaWidth = compact ? 205 : 220;
+    const titleLeft = right - titleAreaWidth;
+    const businessWidth = Math.max(120, titleLeft - textX - 24);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(compact ? 11.5 : 14);
     setColor(NAVY);
     const name = clean(options.business.name) || "Business";
-    doc.text(name.toUpperCase(), textX, top + (compact ? 12 : 14));
+    const businessName = (doc.splitTextToSize(name.toUpperCase(), businessWidth) as string[]).slice(0, 2);
+    doc.text(businessName, textX, top + (compact ? 10 : 12), { lineHeightFactor: 1.05 });
 
     if (!compact) {
       const contacts = [
@@ -148,14 +152,20 @@ export function createChrome(doc: jsPDF, options: ChromeOptions): Chrome {
       doc.setFontSize(7.5);
       setColor(MUTED);
       contacts.forEach((text, index) =>
-        doc.text((doc.splitTextToSize(text, 250) as string[])[0], textX, top + 28 + index * 10),
+        doc.text((doc.splitTextToSize(text, businessWidth) as string[])[0], textX, top + 40 + index * 10),
       );
     }
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(compact ? 13 : 19);
+    const title = options.title.toUpperCase();
+    let titleSize = compact ? 13 : 19;
+    doc.setFontSize(titleSize);
+    while (doc.getTextWidth(title) > titleAreaWidth && titleSize > 11) {
+      titleSize -= 0.5;
+      doc.setFontSize(titleSize);
+    }
     setColor(NAVY);
-    doc.text(options.title.toUpperCase(), right, top + (compact ? 12 : 16), { align: "right" });
+    doc.text(title, right, top + (compact ? 12 : 16), { align: "right" });
 
     if (!compact) {
       if (options.caption) {
@@ -165,7 +175,7 @@ export function createChrome(doc: jsPDF, options: ChromeOptions): Chrome {
         doc.text(options.caption.toUpperCase(), right, top + 29, { align: "right" });
       }
       const meta = (options.meta ?? []).slice(0, 3);
-      const metaLeft = right - 200;
+      const metaLeft = titleLeft;
       doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
       doc.line(metaLeft, top + 37, right, top + 37);
       meta.forEach(([label, value], index) => {
@@ -177,7 +187,8 @@ export function createChrome(doc: jsPDF, options: ChromeOptions): Chrome {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8.5);
         setColor(INK);
-        doc.text(value, right, rowY, { align: "right" });
+        const safeValue = (doc.splitTextToSize(value, titleAreaWidth - 74) as string[])[0] ?? value;
+        doc.text(safeValue, right, rowY, { align: "right" });
       });
       const metaBottom = top + 51 + Math.max(meta.length, 1) * 14;
       const headerBottom = Math.max(metaBottom, top + 70);
@@ -437,9 +448,10 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   if (notesRendered.length) notesHeight += 12;
 
   const blockHeight = Math.max(summaryHeight, notesHeight);
-  ensure(blockHeight + 60);
-  y += 18;
-  const blockTop = y;
+  const signatureSpace = 58;
+  ensure(blockHeight + signatureSpace + 18);
+  const bottomAnchoredTop = chrome.bottomLimit - blockHeight - signatureSpace;
+  const blockTop = Math.max(y + 18, bottomAnchoredTop);
 
   if (notesRendered.length) {
     doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
@@ -487,7 +499,7 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   doc.setFontSize(12);
   doc.text(money(data.total), summaryX + summaryWidth - 16, blockTop + summaryHeight - 12, { align: "right" });
 
-  y = blockTop + blockHeight + 24;
+  y = blockTop + blockHeight + 12;
 
   /* ---------- signature ---------- */
   ensure(48);
