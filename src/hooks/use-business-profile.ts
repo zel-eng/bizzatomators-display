@@ -32,13 +32,21 @@ export function useBusinessProfile() {
     const logoPath = String(row?.logo_path ?? "");
     const logoDataUrl = logoPath ? await businessLogoDataUrl(logoPath) : null;
     const accent = logoDataUrl ? await accentFromLogo(logoDataUrl) : null;
-    setProfile({
+    const next: BusinessIdentity = {
       name: row?.business_name || row?.full_name || "Bizz",
       address: row?.business_address ?? "",
       phone: row?.phone ?? "",
       logoPath,
       logoDataUrl,
       accent,
+    };
+    setProfile(next);
+    setDocumentBusiness({
+      name: next.name,
+      address: next.address,
+      phone: next.phone,
+      logoDataUrl: next.logoDataUrl ?? undefined,
+      accent: next.accent ?? undefined,
     });
   }, []);
 
