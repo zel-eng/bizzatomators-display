@@ -82,32 +82,6 @@ export function exportReportPdf(payload: ReportPayload) {
     y = chrome.header(true);
   };
 
-  if (payload.summary?.length) {
-    const rowsPerCol = Math.ceil(payload.summary.length / 2);
-    const boxHeight = 24 + rowsPerCol * 16;
-    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
-    doc.setFillColor(PANEL[0], PANEL[1], PANEL[2]);
-    doc.roundedRect(MARGIN, y, pageWidth - MARGIN * 2, boxHeight, 9, 9, "FD");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.setTextColor(accent[0], accent[1], accent[2]);
-    doc.text("SUMMARY", MARGIN + 14, y + 15);
-    const colWidth = (pageWidth - MARGIN * 2) / 2;
-    payload.summary.forEach(([label, value], index) => {
-      const col = Math.floor(index / rowsPerCol);
-      const rowY = y + 30 + (index % rowsPerCol) * 16;
-      const x = MARGIN + 14 + col * colWidth;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-      doc.text(String(label), x, rowY);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK[0], INK[1], INK[2]);
-      doc.text(String(value), x + colWidth - 28, rowY, { align: "right" });
-    });
-    y += boxHeight + 18;
-  }
-
   const usable = pageWidth - MARGIN * 2;
   const colWidth = usable / Math.max(payload.headers.length, 1);
 
@@ -162,6 +136,33 @@ export function exportReportPdf(payload: ReportPayload) {
     doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
     doc.text("No records for this period.", MARGIN + 10, y + 16);
     y += 26;
+  }
+
+  if (payload.summary?.length) {
+    const rowsPerCol = Math.ceil(payload.summary.length / 2);
+    const boxHeight = 30 + rowsPerCol * 18;
+    if (y + boxHeight > chrome.bottomLimit) newPage();
+    y = Math.max(y + 18, chrome.bottomLimit - boxHeight);
+    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+    doc.setFillColor(PANEL[0], PANEL[1], PANEL[2]);
+    doc.roundedRect(MARGIN, y, usable, boxHeight, 9, 9, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(accent[0], accent[1], accent[2]);
+    doc.text("SUMMARY", MARGIN + 14, y + 17);
+    const summaryColWidth = usable / 2;
+    payload.summary.forEach(([label, value], index) => {
+      const col = Math.floor(index / rowsPerCol);
+      const rowY = y + 34 + (index % rowsPerCol) * 18;
+      const x = MARGIN + 14 + col * summaryColWidth;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text(String(label), x, rowY);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+      doc.text(String(value), x + summaryColWidth - 28, rowY, { align: "right" });
+    });
   }
 
   chrome.footer();
