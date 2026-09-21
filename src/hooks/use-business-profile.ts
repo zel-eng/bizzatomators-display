@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { accentFromLogo, businessLogoDataUrl } from "@/lib/business-logo";
+import { setDocumentBusiness } from "@/lib/document-business";
 
 export type BusinessIdentity = {
   name: string;
