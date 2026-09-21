@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { accentFromLogo, businessLogoDataUrl } from "@/lib/business-logo";
+import { setDocumentBusiness } from "@/lib/document-business";
 
 export type BusinessIdentity = {
   name: string;
@@ -28,6 +29,16 @@ export function useBusinessProfile() {
       .select("business_name, full_name, phone, logo_path, business_address")
       .eq("id", userId)
       .maybeSingle();
+    if (!data) {
+      const fallback: BusinessIdentity = {
+        ...EMPTY,
+        name: String(auth.user?.user_metadata?.business_name ?? auth.user?.user_metadata?.full_name ?? "Business"),
+        phone: String(auth.user?.phone ?? ""),
+      };
+      setProfile(fallback);
+      setDocumentBusiness(fallback);
+      return;
+    }
     const row = data as any;
     const logoPath = String(row?.logo_path ?? "");
     const logoDataUrl = logoPath ? await businessLogoDataUrl(logoPath) : null;

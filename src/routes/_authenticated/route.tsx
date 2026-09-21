@@ -9,6 +9,7 @@ import desertSunsetBg from "@/assets/desert-sunset-bg.jpg";
 import { MobileNav } from "@/components/mobile-nav";
 import { BusinessScopeProvider, useBusinessScope } from "@/components/business-scope-provider";
 import { ScopeGuard } from "@/components/scope-guard";
+import { useBusinessProfile } from "@/hooks/use-business-profile";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -60,6 +61,7 @@ function useHeading(pathname: string) {
 
 
 function AuthedLayout() {
+  useBusinessProfile();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const heading = useHeading(pathname);
   const { moduleAllowed } = useBusinessScope();
