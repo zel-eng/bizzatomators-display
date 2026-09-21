@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { getDocumentBusiness } from "@/lib/document-business";
+import { loadDocumentBusiness } from "@/lib/document-business";
 import { exportReportPdf } from "@/lib/report-export";
 
 
@@ -223,6 +223,7 @@ export function TaxTable<T extends { id: string }>({
   }, [rows, query, filter, filterValue, searchKeys]);
 
   const hasActions = Boolean(onEdit || onDelete || rowActions);
+  const currentExportTitle = () => document.querySelector("h1")?.textContent?.trim() || "Report";
 
 
   return (
@@ -263,10 +264,10 @@ export function TaxTable<T extends { id: string }>({
                 <DropdownMenuItem onClick={() => onExport(visible)}>
                   <Download className="mr-2 h-4 w-4" /> CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, "export", "Report", "excel")}>
+                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, currentExportTitle().toLowerCase().replace(/[^a-z0-9]+/g, "-"), currentExportTitle(), "excel")}>
                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, "export", "Report", "pdf")}>
+                <DropdownMenuItem onClick={() => exportTableRows(visible, columns, currentExportTitle().toLowerCase().replace(/[^a-z0-9]+/g, "-"), currentExportTitle(), "pdf")}>
                   <Download className="mr-2 h-4 w-4" /> PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -506,7 +507,7 @@ export function exportExcel(filename: string, headers: string[], rows: (string |
   exportBlob(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
 }
 
-export function exportPdf(filename: string, title: string, headers: string[], rows: (string | number)[][]) {
+export async function exportPdf(filename: string, title: string, headers: string[], rows: (string | number)[][]) {
   exportReportPdf({
     filename: filename.replace(/\.pdf$/i, ""),
     title,
@@ -517,7 +518,7 @@ export function exportPdf(filename: string, title: string, headers: string[], ro
       ["Records", String(rows.length)],
       ["Export", "PDF"],
     ],
-    business: getDocumentBusiness(),
+    business: await loadDocumentBusiness(),
   });
 }
 
