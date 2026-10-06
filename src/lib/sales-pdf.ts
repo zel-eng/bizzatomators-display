@@ -56,7 +56,7 @@ export type PdfDocument = {
   /** Heading of the left party card. Defaults by document kind. */
   customerHeading?: string;
   lines: PdfLine[];
-  /** Force product thumbnails on/off. Defaults to "show when available". */
+   /** Force product photos on/off. Defaults to "show when available". */
   showImages?: boolean;
   subtotal: number;
   taxAmount?: number;
@@ -351,9 +351,10 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   const colPrice = right - 96;
   const colQty = right - 166;
   const itemX = MARGIN + 26;
-  const imgSize = 26;
-  const nameX = hasImages ? itemX + imgSize + 8 : itemX;
-  const nameWidth = colQty - nameX - 44;
+   const imgSize = 96;
+   const nameX = hasImages ? itemX + imgSize + 14 : itemX;
+   const nameWidth = colQty - nameX - 18;
+   const detailWidth = right - nameX - 10;
 
   const tableHead = () => {
     fill(NAVY);
@@ -372,52 +373,84 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   tableHead();
 
   data.lines.forEach((line, index) => {
-    const descText = [clean(line.description), clean(line.spec)].filter(Boolean).join(" · ");
-    const descLines = descText ? (doc.splitTextToSize(descText, nameWidth) as string[]).slice(0, 2) : [];
-    const rowHeight = Math.max(hasImages ? imgSize + 12 : 22, 20 + descLines.length * 9);
-    if (y + rowHeight > chrome.bottomLimit) {
-      newPage();
-      tableHead();
-    }
-    if (index % 2 === 1) {
-      doc.setFillColor(250, 251, 253);
-      doc.rect(MARGIN, y, pageWidth - MARGIN * 2, rowHeight, "F");
-    }
-    if (hasImages) {
-      doc.setFillColor(241, 244, 247);
-      doc.roundedRect(itemX, y + 5, imgSize, imgSize, 4, 4, "F");
-      if (line.imageDataUrl) {
-        try {
-          doc.addImage(line.imageDataUrl, imageFormat(line.imageDataUrl), itemX, y + 5, imgSize, imgSize, undefined, "FAST");
-        } catch {
-          /* unreadable image: keep the placeholder tile */
-        }
-      }
-    }
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    setColor(MUTED);
-    doc.text(String(index + 1), MARGIN + 10, y + 15);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    setColor(NAVY);
-    doc.text((doc.splitTextToSize(line.name || "—", nameWidth) as string[])[0], nameX, y + 15);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    setColor(INK);
-    doc.text(String(line.quantity), colQty, y + 15, { align: "right" });
-    doc.text(money(line.unitPrice), colPrice, y + 15, { align: "right" });
-    doc.setFont("helvetica", "bold");
-    doc.text(money(line.lineTotal), colTotal, y + 15, { align: "right" });
-    if (descLines.length) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      setColor(MUTED);
-      descLines.forEach((text, i) => doc.text(text, nameX, y + 26 + i * 9));
-    }
-    y += rowHeight;
-    doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
-    doc.line(MARGIN, y, right, y);
+     doc.setFont("helvetica", "bold");
+     doc.setFontSize(10.5);
+     const nameLines = doc.splitTextToSize(line.name || "—", nameWidth) as string[];
+     doc.setFont("helvetica", "normal");
+     doc.setFontSize(9.5);
+     const details = [clean(line.description), clean(line.spec)].filter(Boolean).join("\n");
+     const detailLines = details ? doc.splitTextToSize(details, detailWidth) as string[] : [];
+     const textLines = [
+       ...nameLines.map((text) => ({ text, heading: true })),
+       ...(detailLines.length ? [{ text: "SPECIFICATIONS", heading: true }] : []),
+       ...detailLines.map((text) => ({ text, heading: false })),
+     ];
+     const lineHeight = 13;
+     let offset = 0;
+     while (offset < textLines.length) {
+       const continued = offset > 0;
+       const textTop = continued ? 32 : 15;
+       const minHeight = hasImages ? imgSize + 20 : textTop + lineHeight + 12;
+       const remainingHeight = Math.max(minHeight, textTop + (textLines.length - offset) * lineHeight + 12);
+       // Prefer an intact product row on a fresh page. Oversized specifications
+       // continue with the same product photo and a repeated table heading.
+        const freshPageHeight = chrome.bottomLimit - 76;
+        if (y + minHeight > chrome.bottomLimit ||
+          (remainingHeight <= freshPageHeight && y + remainingHeight > chrome.bottomLimit)) {
+         newPage();
+         tableHead();
+       }
+       const count = Math.max(1, Math.floor((chrome.bottomLimit - y - textTop - 12) / lineHeight));
+       const chunk = textLines.slice(offset, offset + count);
+       const rowHeight = Math.max(minHeight, textTop + chunk.length * lineHeight + 12);
+       if (index % 2 === 1) {
+         fill(PANEL);
+         doc.rect(MARGIN, y, pageWidth - MARGIN * 2, rowHeight, "F");
+       }
+       if (hasImages) {
+         fill(PANEL);
+         doc.roundedRect(itemX, y + 10, imgSize, imgSize, 4, 4, "F");
+         if (line.imageDataUrl) {
+           try {
+             const image = doc.getImageProperties(line.imageDataUrl);
+             const scale = Math.min(imgSize / image.width, imgSize / image.height);
+             const width = image.width * scale;
+             const height = image.height * scale;
+             doc.addImage(line.imageDataUrl, imageFormat(line.imageDataUrl), itemX + (imgSize - width) / 2,
+               y + 10 + (imgSize - height) / 2, width, height, undefined, "FAST");
+           } catch {
+             /* unreadable image: keep the placeholder tile */
+           }
+         }
+       }
+       doc.setFont("helvetica", "normal");
+       doc.setFontSize(8);
+       setColor(MUTED);
+       doc.text(String(index + 1), MARGIN + 10, y + 15);
+       if (continued) doc.text("CONTINUED", nameX, y + 15);
+       else {
+         doc.setFontSize(9);
+         setColor(INK);
+         doc.text(String(line.quantity), colQty, y + 15, { align: "right" });
+         doc.text(money(line.unitPrice), colPrice, y + 15, { align: "right" });
+         doc.setFont("helvetica", "bold");
+         doc.text(money(line.lineTotal), colTotal, y + 15, { align: "right" });
+       }
+       chunk.forEach(({ text, heading }, i) => {
+         doc.setFont("helvetica", heading ? "bold" : "normal");
+         doc.setFontSize(heading ? 10.5 : 9.5);
+         setColor(heading ? NAVY : INK);
+         doc.text(text, nameX, y + textTop + i * lineHeight);
+       });
+       offset += chunk.length;
+       y += rowHeight;
+       doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+       doc.line(MARGIN, y, right, y);
+       if (offset < textLines.length) {
+         newPage();
+         tableHead();
+       }
+     }
   });
 
   /* ---------- notes card + summary card ---------- */
