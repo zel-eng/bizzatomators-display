@@ -35,11 +35,12 @@ export function getDocumentBusiness(): DocumentBusiness {
 /** Loads the current registered identity when a page has not warmed the cache yet. */
 export async function loadDocumentBusiness(): Promise<DocumentBusiness> {
   const existing = getDocumentBusiness();
-  if (existing.name) return existing;
+  // Reuse the in-memory identity only when it is a real registered name.
+  if (cached && existing.name && existing.name !== "Business" && existing.name !== "Bizz") return existing;
 
   const { data: auth } = await supabase.auth.getUser();
   const user = auth.user;
-  if (!user) return { name: "Business" };
+  if (!user) return existing.name ? existing : { name: "Business" };
 
   const { data } = await supabase
     .from("profiles")
