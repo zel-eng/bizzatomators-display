@@ -394,7 +394,9 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
        const remainingHeight = Math.max(minHeight, textTop + (textLines.length - offset) * lineHeight + 12);
        // Prefer an intact product row on a fresh page. Oversized specifications
        // continue with the same product photo and a repeated table heading.
-       if (y + Math.min(remainingHeight, chrome.bottomLimit - 76) > chrome.bottomLimit) {
+        const freshPageHeight = chrome.bottomLimit - 76;
+        if (y + minHeight > chrome.bottomLimit ||
+          (remainingHeight <= freshPageHeight && y + remainingHeight > chrome.bottomLimit)) {
          newPage();
          tableHead();
        }
