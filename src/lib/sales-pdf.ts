@@ -120,7 +120,7 @@ export function createChrome(doc: jsPDF, options: ChromeOptions): Chrome {
     doc.rect(0, 5, pageWidth, 5, "F");
 
     const logo = options.business.logoDataUrl;
-    const logoSize = compact ? 22 : 30;
+    const logoSize = compact ? 30 : 42;
     let textX = MARGIN;
     const top = compact ? 22 : 30;
     if (logo) {
