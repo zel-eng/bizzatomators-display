@@ -253,9 +253,19 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   const setColor = (c: RGB) => doc.setTextColor(c[0], c[1], c[2]);
   const fill = (c: RGB) => doc.setFillColor(c[0], c[1], c[2]);
 
-  let y = chrome.header(false);
+   const watermark = () => {
+     if (!isDraft) return;
+     doc.setFont("helvetica", "bold");
+     doc.setFontSize(78);
+     doc.setTextColor(238, 240, 245);
+     doc.text("DRAFT", pageWidth / 2, pageHeight / 2, { align: "center", angle: 28 });
+   };
+   // Paint first: product text and photos must always sit above the watermark.
+   watermark();
+   let y = chrome.header(false);
   const newPage = () => {
     doc.addPage();
+     watermark();
     y = chrome.header(true);
   };
   const ensure = (needed: number) => {
@@ -374,18 +384,18 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
 
   data.lines.forEach((line, index) => {
      doc.setFont("helvetica", "bold");
-     doc.setFontSize(10.5);
+      doc.setFontSize(9.5);
      const nameLines = doc.splitTextToSize(line.name || "—", nameWidth) as string[];
      doc.setFont("helvetica", "normal");
-     doc.setFontSize(9.5);
+      doc.setFontSize(8);
      const details = [clean(line.description), clean(line.spec)].filter(Boolean).join("\n");
      const detailLines = details ? doc.splitTextToSize(details, detailWidth) as string[] : [];
      const textLines = [
-       ...nameLines.map((text) => ({ text, heading: true })),
-       ...(detailLines.length ? [{ text: "SPECIFICATIONS", heading: true }] : []),
-       ...detailLines.map((text) => ({ text, heading: false })),
+        ...nameLines.map((text) => ({ text, heading: true, size: 9.5 })),
+        ...(detailLines.length ? [{ text: "SPECIFICATIONS", heading: true, size: 8 }] : []),
+        ...detailLines.map((text) => ({ text, heading: false, size: 8 })),
      ];
-     const lineHeight = 13;
+      const lineHeight = 11;
      let offset = 0;
      while (offset < textLines.length) {
        const continued = offset > 0;
@@ -436,9 +446,9 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
          doc.setFont("helvetica", "bold");
          doc.text(money(line.lineTotal), colTotal, y + 15, { align: "right" });
        }
-       chunk.forEach(({ text, heading }, i) => {
+        chunk.forEach(({ text, heading, size }, i) => {
          doc.setFont("helvetica", heading ? "bold" : "normal");
-         doc.setFontSize(heading ? 10.5 : 9.5);
+          doc.setFontSize(size);
          setColor(heading ? NAVY : INK);
          doc.text(text, nameX, y + textTop + i * lineHeight);
        });
@@ -546,18 +556,6 @@ export function renderSalesDocument(data: PdfDocument): jsPDF {
   if (data.business.name) {
     const signatureName = (doc.splitTextToSize(data.business.name, 160) as string[])[0] ?? data.business.name;
     doc.text(signatureName, right - 85, y + 40, { align: "center" });
-  }
-
-  /* ---------- draft watermark ---------- */
-  if (isDraft) {
-    const pages = doc.getNumberOfPages();
-    for (let page = 1; page <= pages; page += 1) {
-      doc.setPage(page);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(78);
-      doc.setTextColor(238, 240, 245);
-      doc.text("DRAFT", pageWidth / 2, pageHeight / 2, { align: "center", angle: 28 });
-    }
   }
 
   chrome.footer();
